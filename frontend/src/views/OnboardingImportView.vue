@@ -1,28 +1,38 @@
 <script setup lang="ts">
 import { ref } from 'vue'
-import { RouterLink } from 'vue-router'
+import { RouterLink, useRouter } from 'vue-router'
 import {
   ArrowLeft,
   ExternalLink,
   FileArchive,
   Folder,
   FolderOpen,
+  LoaderCircle,
   ShieldCheck,
   Upload,
   X,
 } from '@lucide/vue'
 
 import { Button } from '@/components/ui/button'
+import { ApiError, uploadExport, type ExportFile } from '@/lib/api/imports'
+import { filesFromDroppedFolder, filesFromFolderInput } from '@/lib/export-files'
 import { cn } from '@/lib/utils'
 
-// Visual only for now: export parsing and import logic come later.
 // The export can come as the ZIP archive or as the folder some browsers
 // (Safari by default) produce by unzipping it automatically.
-type Selection = { kind: 'zip'; name: string; size: number } | { kind: 'folder'; name: string }
+interface Selection {
+  kind: 'zip' | 'folder'
+  name: string
+  size: number
+  files: ExportFile[]
+}
+
+const router = useRouter()
 
 const selection = ref<Selection | null>(null)
 const error = ref<string | null>(null)
 const isDragging = ref(false)
+const isUploading = ref(false)
 const zipInput = ref<HTMLInputElement>()
 const folderInput = ref<HTMLInputElement>()
 
@@ -36,12 +46,27 @@ function selectZip(file: File | undefined) {
     return
   }
   error.value = null
-  selection.value = { kind: 'zip', name: file.name, size: file.size }
+  selection.value = {
+    kind: 'zip',
+    name: file.name,
+    size: file.size,
+    files: [{ file, path: file.name }],
+  }
 }
 
-function selectFolder(name: string) {
+function selectFolder(files: ExportFile[]) {
+  const [first] = files
+  if (!first) {
+    error.value = INVALID_FORMAT
+    return
+  }
   error.value = null
-  selection.value = { kind: 'folder', name }
+  selection.value = {
+    kind: 'folder',
+    name: first.path.split('/')[0] ?? first.path,
+    size: files.reduce((total, { file }) => total + file.size, 0),
+    files,
+  }
 }
 
 function onZipChange(event: Event) {
@@ -52,8 +77,7 @@ function onZipChange(event: Event) {
 
 function onFolderChange(event: Event) {
   const target = event.target as HTMLInputElement
-  const firstPath = target.files?.[0]?.webkitRelativePath
-  if (firstPath) selectFolder(firstPath.split('/')[0] ?? firstPath)
+  if (target.files?.length) selectFolder(filesFromFolderInput(target.files))
   target.value = ''
 }
 
@@ -62,14 +86,46 @@ function onDragLeave(event: DragEvent) {
   if (!zone.contains(event.relatedTarget as Node | null)) isDragging.value = false
 }
 
-function onDrop(event: DragEvent) {
+async function onDrop(event: DragEvent) {
   isDragging.value = false
+  // The entry is only readable during the event: grab it before any await.
   const entry = event.dataTransfer?.items[0]?.webkitGetAsEntry()
+  const file = event.dataTransfer?.files[0]
+
   if (entry?.isDirectory) {
-    selectFolder(entry.name)
+    try {
+      selectFolder(await filesFromDroppedFolder(entry as FileSystemDirectoryEntry))
+    } catch {
+      error.value = 'Impossible de lire ce dossier. Essayez avec le bouton « Choisir un dossier ».'
+    }
   } else {
-    selectZip(event.dataTransfer?.files[0])
+    selectZip(file)
   }
+}
+
+async function submit() {
+  if (!selection.value || isUploading.value) return
+  isUploading.value = true
+  error.value = null
+  try {
+    const id = await uploadExport(selection.value.files)
+    await router.push({ name: 'onboarding-import-summary', params: { id } })
+  } catch (cause) {
+    error.value = uploadErrorMessage(cause)
+  } finally {
+    isUploading.value = false
+  }
+}
+
+function uploadErrorMessage(cause: unknown) {
+  if (!(cause instanceof ApiError)) {
+    return 'Le serveur Openboxd est injoignable. Vérifiez qu’il est démarré, puis réessayez.'
+  }
+  if (cause.status === 400) {
+    return 'Cet export n’a pas été reconnu. Vérifiez qu’il s’agit bien de l’export Letterboxd.'
+  }
+  if (cause.status === 413) return 'Cet export est trop volumineux (100 Mo maximum).'
+  return 'L’import a échoué. Réessayez dans un instant.'
 }
 
 function formatSize(bytes: number) {
@@ -139,14 +195,12 @@ function formatSize(bytes: number) {
         <div class="min-w-0 flex-1">
           <p class="truncate text-sm font-medium">{{ selection.name }}</p>
           <p class="text-sm text-muted-foreground">
-            {{
-              selection.kind === 'zip'
-                ? `Archive ZIP · ${formatSize(selection.size)}`
-                : 'Dossier décompressé'
-            }}
+            {{ selection.kind === 'zip' ? 'Archive ZIP' : 'Dossier décompressé' }} ·
+            {{ formatSize(selection.size) }}
           </p>
         </div>
-        <Button variant="ghost" size="icon-sm" :aria-label="`Retirer ${selection.name}`" @click="selection = null">
+        <Button variant="ghost" size="icon-sm" :disabled="isUploading" :aria-label="`Retirer ${selection.name}`"
+          @click="selection = null">
           <X />
         </Button>
       </div>
@@ -186,7 +240,10 @@ function formatSize(bytes: number) {
         <ShieldCheck class="size-3.5 shrink-0" />
         Vos données restent sur votre instance, rien n’est envoyé à un service tiers.
       </p>
-      <Button :disabled="!selection">Importer</Button>
+      <Button :disabled="!selection || isUploading" @click="submit">
+        <LoaderCircle v-if="isUploading" data-icon="inline-start" class="animate-spin" />
+        {{ isUploading ? 'Import en cours…' : 'Importer' }}
+      </Button>
     </footer>
   </main>
 </template>

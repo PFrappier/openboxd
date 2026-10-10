@@ -52,6 +52,7 @@ func run() error {
 
 	r.Route("/api", func(r chi.Router) {
 		r.Post("/imports", importHandler.Upload)
+		r.Get("/imports/{id}", importHandler.Summary)
 	})
 
 	srv := &http.Server{

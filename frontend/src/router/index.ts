@@ -14,6 +14,12 @@ const router = createRouter({
       name: 'onboarding-import',
       component: () => import('@/views/OnboardingImportView.vue'),
     },
+    {
+      path: '/onboarding/import/:id',
+      name: 'onboarding-import-summary',
+      component: () => import('@/views/OnboardingImportSummaryView.vue'),
+      props: true,
+    },
   ],
 })
 
