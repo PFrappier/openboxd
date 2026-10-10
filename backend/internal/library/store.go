@@ -4,6 +4,7 @@ package library
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 )
 
 // WatchedFilm is a film the user marked as watched.
@@ -15,6 +16,16 @@ type WatchedFilm struct {
 	LetterboxdURI string `json:"letterboxdUri"`
 	// WatchedOn is the day the film was marked as watched (YYYY-MM-DD).
 	WatchedOn string `json:"watchedOn"`
+
+	// The details below come from TMDB, not from the export: AddWatched
+	// ignores them, and they are null until fetched or when TMDB lacks them.
+	Overview *string `json:"overview"`
+	// PosterPath is relative to TMDB's image CDN, e.g. "/8Gxv8gSFCU0.jpg".
+	PosterPath *string `json:"posterPath"`
+	// Runtime is in minutes.
+	Runtime *int `json:"runtime"`
+	// Directors holds their names, in the order TMDB credits them.
+	Directors []string `json:"directors"`
 }
 
 type Store struct {
@@ -73,7 +84,12 @@ func (s *Store) ListWatched(ctx context.Context, limit, offset int) ([]WatchedFi
 	}
 
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT f.id, f.name, f.year, f.letterboxd_uri, w.watched_on
+		SELECT f.id, f.name, f.year, f.letterboxd_uri, w.watched_on,
+		       f.overview, f.poster_path, f.runtime,
+		       (SELECT json_group_array(p.name ORDER BY d.position)
+		        FROM film_directors d
+		        JOIN people p ON p.id = d.person_id
+		        WHERE d.film_id = f.id)
 		FROM watched w
 		JOIN films f ON f.id = w.film_id
 		ORDER BY w.watched_on DESC, f.name COLLATE NOCASE, f.id
@@ -87,7 +103,14 @@ func (s *Store) ListWatched(ctx context.Context, limit, offset int) ([]WatchedFi
 	films := []WatchedFilm{}
 	for rows.Next() {
 		var f WatchedFilm
-		if err := rows.Scan(&f.ID, &f.Name, &f.Year, &f.LetterboxdURI, &f.WatchedOn); err != nil {
+		var directors string
+		err := rows.Scan(&f.ID, &f.Name, &f.Year, &f.LetterboxdURI, &f.WatchedOn,
+			&f.Overview, &f.PosterPath, &f.Runtime, &directors)
+		if err != nil {
+			return nil, 0, err
+		}
+		// A JSON array, [] for a film without known director.
+		if err := json.Unmarshal([]byte(directors), &f.Directors); err != nil {
 			return nil, 0, err
 		}
 		films = append(films, f)

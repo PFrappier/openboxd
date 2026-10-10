@@ -96,6 +96,40 @@ func TestWatchedPagination(t *testing.T) {
 	}
 }
 
+func TestWatchedDetails(t *testing.T) {
+	store := newStore(t)
+	err := store.AddWatched(t.Context(), []WatchedFilm{
+		{Name: "The Matrix", LetterboxdURI: "https://boxd.it/2a1m", WatchedOn: "2024-01-02"},
+		{Name: "Not on TMDB", LetterboxdURI: "https://boxd.it/0", WatchedOn: "2024-01-01"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, page := getWatched(t, store, "")
+	err = store.SetMetadata(t.Context(), page.Films[0].ID, Metadata{
+		TMDBID:     603,
+		Overview:   "Un pirate informatique découvre la Matrice.",
+		PosterPath: "/matrix.jpg",
+		Runtime:    136,
+		// Stored in this order, which isn't the alphabetical one.
+		Directors: []Person{{TMDBID: 9340, Name: "Lilly Wachowski"}, {TMDBID: 9339, Name: "Lana Wachowski"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	rec, _ := getWatched(t, store, "")
+	want := `{"total":2,"films":[` +
+		`{"id":1,"name":"The Matrix","year":null,"letterboxdUri":"https://boxd.it/2a1m","watchedOn":"2024-01-02",` +
+		`"overview":"Un pirate informatique découvre la Matrice.","posterPath":"/matrix.jpg","runtime":136,` +
+		`"directors":["Lilly Wachowski","Lana Wachowski"]},` +
+		`{"id":2,"name":"Not on TMDB","year":null,"letterboxdUri":"https://boxd.it/0","watchedOn":"2024-01-01",` +
+		`"overview":null,"posterPath":null,"runtime":null,"directors":[]}]}` + "\n"
+	if rec.Body.String() != want {
+		t.Errorf("body = %s\nwant %s", rec.Body, want)
+	}
+}
+
 func TestWatchedBadQuery(t *testing.T) {
 	store := newStore(t)
 	for _, query := range []string{"?limit=0", "?limit=-1", "?limit=abc", "?offset=-1", "?offset=x"} {

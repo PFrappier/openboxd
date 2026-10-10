@@ -5,9 +5,10 @@ import { CircleAlert, Clapperboard, Download, LoaderCircle } from '@lucide/vue'
 
 import { Button } from '@/components/ui/button'
 import { ApiError } from '@/lib/api/client'
-import { getWatchedFilms, type WatchedFilm } from '@/lib/api/films'
+import { getWatchedFilms, posterUrl, type WatchedFilm } from '@/lib/api/films'
 
-const PAGE_SIZE = 50
+// Fills whole rows whatever the number of columns, from 2 to 6.
+const PAGE_SIZE = 60
 
 const films = ref<WatchedFilm[]>([])
 const total = ref<number | null>(null)
@@ -45,10 +46,24 @@ function formatDate(isoDate: string) {
 }
 
 const formatCount = (count: number) => count.toLocaleString('fr-FR')
+
+const gridClass =
+  'grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6'
+
+/** Lets the browser pick the poster matching the card's width and the screen's density. */
+function posterSrcset(posterPath: string) {
+  return ([185, 342, 500] as const)
+    .map((width) => `${posterUrl(posterPath, width)} ${width}w`)
+    .join(', ')
+}
+
+// Width of a card for each number of columns of gridClass.
+const posterSizes =
+  '(min-width: 80rem) 200px, (min-width: 64rem) 20vw, (min-width: 48rem) 25vw, (min-width: 40rem) 33vw, 50vw'
 </script>
 
 <template>
-  <main class="mx-auto flex w-full max-w-2xl flex-col gap-8 px-4 py-10">
+  <main class="mx-auto flex w-full max-w-7xl flex-col gap-8 px-4 py-10 sm:px-6">
     <header class="space-y-1">
       <h1 class="text-3xl font-semibold tracking-tight">Films vus</h1>
       <p v-if="total !== null" class="text-muted-foreground">
@@ -60,16 +75,19 @@ const formatCount = (count: number) => count.toLocaleString('fr-FR')
     <!-- First load -->
     <ul
       v-if="total === null && !error"
-      class="divide-y rounded-xl border bg-card"
+      :class="gridClass"
       aria-busy="true"
       aria-label="Chargement des films"
     >
-      <li v-for="n in 8" :key="n" class="flex h-12 items-center justify-between gap-4 px-4">
-        <span
-          class="h-4 animate-pulse rounded bg-muted"
-          :style="{ width: `${30 + ((n * 17) % 40)}%` }"
-        />
-        <span class="h-4 w-20 animate-pulse rounded bg-muted" />
+      <li v-for="n in 12" :key="n" class="overflow-hidden rounded-xl border bg-card">
+        <div class="aspect-2/3 animate-pulse bg-muted" />
+        <div class="space-y-2 p-3">
+          <div
+            class="h-4 animate-pulse rounded bg-muted"
+            :style="{ width: `${50 + ((n * 17) % 40)}%` }"
+          />
+          <div class="h-3 w-1/2 animate-pulse rounded bg-muted" />
+        </div>
       </li>
     </ul>
 
@@ -95,22 +113,39 @@ const formatCount = (count: number) => count.toLocaleString('fr-FR')
       </Button>
     </div>
 
-    <ul v-else-if="films.length" class="divide-y rounded-xl border bg-card text-card-foreground">
+    <ul v-else-if="films.length" :class="gridClass">
       <li
         v-for="film in films"
         :key="film.id"
-        class="flex min-h-12 items-center justify-between gap-4 px-4 py-2.5"
+        class="flex flex-col overflow-hidden rounded-xl border bg-card text-card-foreground"
       >
-        <p class="min-w-0 text-sm">
-          <span class="font-medium">{{ film.name }}</span>
-          <span v-if="film.year" class="ml-2 text-muted-foreground">{{ film.year }}</span>
-        </p>
-        <time
-          :datetime="film.watchedOn"
-          class="shrink-0 text-sm text-muted-foreground tabular-nums"
-        >
-          {{ formatDate(film.watchedOn) }}
-        </time>
+        <!-- The poster is decorative: the title is right under it. -->
+        <img
+          v-if="film.posterPath"
+          :src="posterUrl(film.posterPath, 342)"
+          :srcset="posterSrcset(film.posterPath)"
+          :sizes="posterSizes"
+          alt=""
+          width="342"
+          height="513"
+          loading="lazy"
+          class="aspect-2/3 w-full bg-muted object-cover"
+        />
+        <div v-else class="flex aspect-2/3 w-full items-center justify-center bg-muted">
+          <Clapperboard class="size-8 text-muted-foreground" />
+        </div>
+        <div class="flex flex-1 flex-col gap-0.5 p-3 text-sm">
+          <p class="line-clamp-2 font-medium">{{ film.name }}</p>
+          <p class="truncate text-muted-foreground">
+            <span v-if="film.year">{{ film.year }}</span>
+            <span v-if="film.year && film.directors.length"> · </span>
+            <span v-if="film.directors.length">{{ film.directors.join(', ') }}</span>
+          </p>
+          <p class="mt-auto pt-2 text-xs text-muted-foreground">
+            Vu le
+            <time :datetime="film.watchedOn">{{ formatDate(film.watchedOn) }}</time>
+          </p>
+        </div>
       </li>
     </ul>
 

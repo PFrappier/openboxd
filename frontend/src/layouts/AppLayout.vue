@@ -62,4 +62,16 @@ const tabClass =
   </header>
 
   <RouterView />
+
+  <!-- TMDB asks for this notice wherever its data is shown. -->
+  <footer class="px-4 py-8 text-center text-xs text-muted-foreground">
+    Affiches et informations sur les films fournies par
+    <a
+      href="https://www.themoviedb.org"
+      target="_blank"
+      rel="noopener"
+      class="underline underline-offset-2 hover:text-foreground"
+      >TMDB</a
+    >. Ce produit utilise l’API TMDB mais n’est ni approuvé ni certifié par TMDB.
+  </footer>
 </template>
