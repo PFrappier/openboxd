@@ -25,7 +25,7 @@ func uploadOK(t *testing.T, h *Handler, files ...upload) {
 
 func listWatched(t *testing.T, store *library.Store) []library.WatchedFilm {
 	t.Helper()
-	films, total, err := store.ListWatched(t.Context(), 100, 0)
+	films, total, err := store.ListWatched(t.Context(), library.WatchedFilter{}, 100, 0)
 	if err != nil {
 		t.Fatal(err)
 	}

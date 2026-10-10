@@ -1,21 +1,39 @@
 <script lang="ts">
-// Last page shown, kept across visits so that coming back from a film renders
+// Last page shown and its URL, kept across visits so that coming back from a film renders
 // the list at once, which lets the router restore the scroll position.
-const lastShown: { page?: number; result?: WatchedFilmsPage } = {}
+const lastShown: { url?: string; result?: WatchedFilmsPage } = {}
 </script>
 
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, useTemplateRef, watch } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
-import { ChevronLeft, ChevronRight, CircleAlert, Clapperboard, Download, Heart } from '@lucide/vue'
+import {
+  ChevronLeft,
+  ChevronRight,
+  CircleAlert,
+  Clapperboard,
+  Download,
+  Heart,
+  SearchX,
+  X,
+} from '@lucide/vue'
 
 import FilmRating from '@/components/FilmRating.vue'
 import { Button } from '@/components/ui/button'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+import { Toggle } from '@/components/ui/toggle'
 import { ApiError } from '@/lib/api/client'
 import {
   getWatchedFilms,
   posterUrl,
   type WatchedFilm,
+  type WatchedFilmsFilter,
   type WatchedFilmsPage,
 } from '@/lib/api/films'
 
@@ -31,18 +49,61 @@ const page = computed(() => {
   return Number.isInteger(asked) && asked >= 1 ? asked : 1
 })
 
-// The first page has no query, so that it keeps the URL the rest of the app links to.
-const pageLocation = (number: number) => ({
-  name: 'films',
-  query: number > 1 ? { page: number } : {},
+const FILTER_NAMES = ['rating', 'liked', 'decade'] as const
+
+/** Filters asked by the URL; those left out aren't in it. */
+const filter = computed(() => {
+  const asked: WatchedFilmsFilter = {}
+  for (const name of FILTER_NAMES) {
+    const value = route.query[name]
+    if (typeof value === 'string' && value) asked[name] = value
+  }
+  return asked
 })
+
+const isFiltered = computed(() => Object.keys(filter.value).length > 0)
+
+// The first page has no page number, so that the unfiltered list keeps the URL the rest
+// of the app links to.
+const pageLocation = (number: number, ofFilter = filter.value) => ({
+  name: 'films',
+  query: { ...ofFilter, ...(number > 1 ? { page: number } : {}) },
+})
+
+/** Changes filters, an empty value removing one, and goes back to the first page. */
+function setFilter(changes: WatchedFilmsFilter) {
+  const changed = { ...filter.value, ...changes }
+  for (const name of FILTER_NAMES) {
+    if (!changed[name]) delete changed[name]
+  }
+  return router.push(pageLocation(1, changed))
+}
+
+const resetFilters = () => router.push(pageLocation(1, {}))
+
+// Value of the choice of a select that filters nothing: an item can't have an empty one.
+const NO_FILTER = 'all'
+
+/** The filter a select was set to, empty for none. */
+const selected = (value: unknown) => (typeof value === 'string' && value !== NO_FILTER ? value : '')
+
+const RATINGS = [5, 4.5, 4, 3.5, 3, 2.5, 2, 1.5, 1, 0.5]
+
+/** e.g. "★★★½". */
+const ratingLabel = (stars: number) => '★'.repeat(Math.floor(stars)) + (stars % 1 ? '½' : '')
+
+// From the current decade back to the first films.
+const DECADES = Array.from(
+  { length: (Math.floor(new Date().getFullYear() / 10) * 10 - 1880) / 10 + 1 },
+  (_, index) => Math.floor(new Date().getFullYear() / 10) * 10 - index * 10,
+)
 
 const films = ref<WatchedFilm[]>([])
 const total = ref<number | null>(null)
 const isLoading = ref(false)
 const error = ref<string | null>(null)
 
-if (lastShown.result && lastShown.page === page.value) {
+if (lastShown.result && lastShown.url === route.fullPath) {
   films.value = lastShown.result.films
   total.value = lastShown.result.total
 }
@@ -77,12 +138,18 @@ const pageSlotStyle = computed(() => ({
 let latestRequest = 0
 
 async function load() {
+  // The URL also changes when leaving the page, which asks for nothing.
+  if (route.name !== 'films') return
   const request = ++latestRequest
   const asked = page.value
+  const url = route.fullPath
   isLoading.value = true
   error.value = null
   try {
-    const result = await getWatchedFilms({ limit: PAGE_SIZE, offset: (asked - 1) * PAGE_SIZE })
+    const result = await getWatchedFilms(
+      { limit: PAGE_SIZE, offset: (asked - 1) * PAGE_SIZE },
+      filter.value,
+    )
     if (request !== latestRequest) return
     const lastPage = Math.max(1, Math.ceil(result.total / PAGE_SIZE))
     if (asked > lastPage) {
@@ -91,7 +158,7 @@ async function load() {
     }
     films.value = result.films
     total.value = result.total
-    Object.assign(lastShown, { page: asked, result })
+    Object.assign(lastShown, { url, result })
   } catch (cause) {
     if (request !== latestRequest) return
     films.value = []
@@ -104,7 +171,7 @@ async function load() {
   }
 }
 
-watch(page, load, { immediate: true })
+watch([page, filter], load, { immediate: true })
 
 const formatCount = (count: number) => count.toLocaleString('fr-FR')
 
@@ -215,11 +282,61 @@ const posterClass =
 <template>
   <!-- Kept compact: a whole page of films and its pagination are meant to fit the screen. -->
   <main ref="page" class="mx-auto flex w-full max-w-7xl flex-col gap-5 px-4 py-6 sm:px-6">
-    <header class="flex flex-wrap items-baseline gap-x-3">
-      <h1 class="text-2xl font-semibold tracking-tight">Films vus</h1>
-      <p v-if="total !== null" class="text-muted-foreground">
-        {{ formatCount(total) }} {{ total > 1 ? 'films' : 'film' }}
-      </p>
+    <header class="flex flex-wrap items-center justify-between gap-x-6 gap-y-3">
+      <div class="flex items-baseline gap-x-3">
+        <h1 class="text-2xl font-semibold tracking-tight">Films vus</h1>
+        <p v-if="total !== null" class="text-muted-foreground">
+          {{ formatCount(total) }} {{ total > 1 ? 'films' : 'film' }}
+        </p>
+      </div>
+
+      <div role="group" aria-label="Filtrer les films" class="flex flex-wrap items-center gap-2">
+        <Button v-if="isFiltered" type="button" variant="ghost" size="sm" @click="resetFilters">
+          <X data-icon="inline-start" />
+          Réinitialiser
+        </Button>
+        <Select
+          :model-value="filter.rating ?? NO_FILTER"
+          @update:model-value="setFilter({ rating: selected($event) })"
+        >
+          <SelectTrigger size="sm" aria-label="Filtrer par note">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem :value="NO_FILTER">Toutes les notes</SelectItem>
+            <SelectItem v-for="stars in RATINGS" :key="stars" :value="String(stars)">
+              {{ ratingLabel(stars) }}
+            </SelectItem>
+            <SelectItem value="none">Non notés</SelectItem>
+          </SelectContent>
+        </Select>
+        <Select
+          :model-value="filter.decade ?? NO_FILTER"
+          @update:model-value="setFilter({ decade: selected($event) })"
+        >
+          <SelectTrigger size="sm" aria-label="Filtrer par décennie">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem :value="NO_FILTER">Toutes les décennies</SelectItem>
+            <SelectItem v-for="decade in DECADES" :key="decade" :value="String(decade)">
+              Années {{ decade }}
+            </SelectItem>
+          </SelectContent>
+        </Select>
+        <Toggle
+          variant="outline"
+          size="sm"
+          :model-value="filter.liked === 'true'"
+          @update:model-value="setFilter({ liked: $event ? 'true' : '' })"
+        >
+          <Heart
+            data-icon="inline-start"
+            :class="filter.liked ? 'fill-current text-brand' : 'text-muted-foreground'"
+          />
+          Aimés
+        </Toggle>
+      </div>
     </header>
 
     <div ref="gridArea">
@@ -235,6 +352,21 @@ const posterClass =
           <div class="aspect-2/3 animate-pulse rounded-lg bg-muted" />
         </li>
       </ul>
+
+      <!-- Nothing left by the filters -->
+      <div
+        v-else-if="total === 0 && isFiltered"
+        class="flex flex-col items-center gap-4 rounded-xl border border-dashed px-6 py-14 text-center"
+      >
+        <div class="flex size-10 items-center justify-center rounded-full bg-muted">
+          <SearchX class="size-5 text-muted-foreground" />
+        </div>
+        <div class="space-y-1">
+          <p class="font-medium">Aucun film ne correspond</p>
+          <p class="text-sm text-muted-foreground">Essayez de retirer un filtre.</p>
+        </div>
+        <Button variant="outline" @click="resetFilters">Réinitialiser les filtres</Button>
+      </div>
 
       <!-- Empty library -->
       <div

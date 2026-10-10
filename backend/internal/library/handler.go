@@ -22,7 +22,8 @@ func NewHandler(store *Store) *Handler {
 	return &Handler{store: store}
 }
 
-// Watched handles GET /api/watched?limit=50&offset=0.
+// Watched handles GET /api/watched?limit=50&offset=0, which the optional
+// rating, liked and decade parameters narrow down, see watchedFilter.
 func (h *Handler) Watched(w http.ResponseWriter, r *http.Request) {
 	limit, ok := queryInt(r, "limit", defaultPageSize)
 	if !ok || limit < 1 {
@@ -35,7 +36,13 @@ func (h *Handler) Watched(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	films, total, err := h.store.ListWatched(r.Context(), min(limit, maxPageSize), offset)
+	filter, problem := watchedFilter(r)
+	if problem != "" {
+		respond.Error(w, http.StatusBadRequest, problem)
+		return
+	}
+
+	films, total, err := h.store.ListWatched(r.Context(), filter, min(limit, maxPageSize), offset)
 	if err != nil {
 		slog.ErrorContext(r.Context(), "list watched films", "err", err)
 		respond.Error(w, http.StatusInternalServerError, "could not list watched films")
@@ -66,6 +73,46 @@ func (h *Handler) Film(w http.ResponseWriter, r *http.Request) {
 	default:
 		respond.JSON(w, http.StatusOK, film)
 	}
+}
+
+// watchedFilter reads the filter of a request for watched films:
+//   - rating: a number of stars from 0.5 to 5, or "none" for unrated films;
+//   - liked: "true" for liked films only;
+//   - decade: its first year, e.g. 1990.
+//
+// It returns what is wrong with the request, if anything.
+func watchedFilter(r *http.Request) (filter WatchedFilter, problem string) {
+	query := r.URL.Query()
+
+	switch raw := query.Get("rating"); raw {
+	case "":
+	case "none":
+		filter.Unrated = true
+	default:
+		stars, err := strconv.ParseFloat(raw, 64)
+		halfStars := int(stars * 2)
+		if err != nil || float64(halfStars) != stars*2 || halfStars < 1 || halfStars > 10 {
+			return filter, `rating must be "none" or a number of stars from 0.5 to 5`
+		}
+		filter.HalfStars = &halfStars
+	}
+
+	switch raw := query.Get("liked"); raw {
+	case "":
+	case "true":
+		filter.Liked = true
+	default:
+		return filter, `liked must be "true"`
+	}
+
+	if raw := query.Get("decade"); raw != "" {
+		decade, err := strconv.Atoi(raw)
+		if err != nil || decade%10 != 0 {
+			return filter, "decade must be the first year of a decade"
+		}
+		filter.Decade = &decade
+	}
+	return filter, ""
 }
 
 // queryInt reads an integer query parameter, or fallback when it is absent.

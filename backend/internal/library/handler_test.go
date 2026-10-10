@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"slices"
 	"testing"
 
 	"codeberg.org/pfrappier/openboxd/backend/internal/database"
@@ -93,6 +94,64 @@ func TestWatchedPagination(t *testing.T) {
 	}
 	if _, page := getWatched(t, store, "?offset=500"); page.Total != 120 || len(page.Films) != 0 {
 		t.Errorf("offset past the end: total = %d, %d films", page.Total, len(page.Films))
+	}
+}
+
+func TestWatchedFilters(t *testing.T) {
+	store := newStore(t)
+	year := func(y int) *int { return &y }
+	film := func(name string, y *int) WatchedFilm {
+		return WatchedFilm{Name: name, Year: y, LetterboxdURI: "https://boxd.it/" + name, WatchedOn: "2024-01-01"}
+	}
+	alien, matrix, undated := film("Alien", year(1979)), film("The Matrix", year(1999)), film("Undated", nil)
+	err := store.Import(t.Context(), Import{
+		Watched: []WatchedFilm{alien, matrix, undated, film("Aliens", year(1986))},
+		Ratings: []RatedFilm{
+			{Name: alien.Name, Year: alien.Year, LetterboxdURI: alien.LetterboxdURI, HalfStars: 9, RatedOn: "2024-01-01"},
+			{Name: matrix.Name, Year: matrix.Year, LetterboxdURI: matrix.LetterboxdURI, HalfStars: 8, RatedOn: "2024-01-01"},
+		},
+		Likes: []LikedFilm{
+			{Name: alien.Name, Year: alien.Year, LetterboxdURI: alien.LetterboxdURI, LikedOn: "2024-01-01"},
+			// Liked without being watched: never listed.
+			{Name: "Heat", LetterboxdURI: "https://boxd.it/Heat", LikedOn: "2024-01-01"},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	tests := []struct {
+		query string
+		want  []string
+	}{
+		{"", []string{"Alien", "Aliens", "The Matrix", "Undated"}},
+		{"?rating=4.5", []string{"Alien"}},
+		{"?rating=4", []string{"The Matrix"}},
+		{"?rating=none", []string{"Aliens", "Undated"}},
+		{"?liked=true", []string{"Alien"}},
+		{"?decade=1980", []string{"Aliens"}},
+		{"?decade=1970&liked=true&rating=4.5", []string{"Alien"}},
+		{"?decade=1990&liked=true", nil},
+	}
+	for _, test := range tests {
+		rec, page := getWatched(t, store, test.query)
+		var got []string
+		for _, f := range page.Films {
+			got = append(got, f.Name)
+		}
+		if rec.Code != http.StatusOK || !slices.Equal(got, test.want) || page.Total != len(test.want) {
+			t.Errorf("%q: status = %d, total = %d, films = %v, want %v", test.query, rec.Code, page.Total, got, test.want)
+		}
+	}
+
+	// The total counts all the films kept, not just those of the page.
+	if _, page := getWatched(t, store, "?rating=none&limit=1&offset=1"); page.Total != 2 || len(page.Films) != 1 {
+		t.Errorf("second page of a filter: total = %d, %d films", page.Total, len(page.Films))
+	}
+
+	for _, query := range []string{"?rating=6", "?rating=0", "?rating=4.2", "?rating=x", "?liked=yes", "?decade=1995", "?decade=x"} {
+		if rec, _ := getWatched(t, store, query); rec.Code != http.StatusBadRequest {
+			t.Errorf("%q: status = %d, want %d", query, rec.Code, http.StatusBadRequest)
+		}
 	}
 }
 

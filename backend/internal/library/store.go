@@ -187,11 +187,54 @@ func (s *Store) Import(ctx context.Context, imp Import) error {
 	return tx.Commit()
 }
 
-// ListWatched returns a page of watched films, most recently watched first,
-// along with the total number of watched films.
-func (s *Store) ListWatched(ctx context.Context, limit, offset int) ([]WatchedFilm, int, error) {
+// WatchedFilter narrows the watched films down; its zero value keeps them all.
+type WatchedFilter struct {
+	// HalfStars keeps the films rated so, from 1 (½) to 10 (★★★★★).
+	HalfStars *int
+	// Unrated keeps the films the user didn't rate.
+	Unrated bool
+	// Liked keeps the films the user liked.
+	Liked bool
+	// Decade keeps the films released in the ten years from it, e.g. 1990.
+	Decade *int
+}
+
+// where returns the conditions of the filter on film f, to put after WHERE,
+// and their arguments.
+func (wf WatchedFilter) where() (string, []any) {
+	conditions := "TRUE"
+	var args []any
+	and := func(condition string, conditionArgs ...any) {
+		conditions += " AND " + condition
+		args = append(args, conditionArgs...)
+	}
+	if wf.HalfStars != nil {
+		and(`EXISTS (SELECT 1 FROM ratings WHERE film_id = f.id AND half_stars = ?)`, *wf.HalfStars)
+	}
+	if wf.Unrated {
+		and(`NOT EXISTS (SELECT 1 FROM ratings WHERE film_id = f.id)`)
+	}
+	if wf.Liked {
+		and(liked)
+	}
+	if wf.Decade != nil {
+		and(`f.year BETWEEN ? AND ?`, *wf.Decade, *wf.Decade+9)
+	}
+	return conditions, args
+}
+
+// ListWatched returns a page of the watched films the filter keeps, most
+// recently watched first, along with how many films it keeps in total.
+func (s *Store) ListWatched(ctx context.Context, filter WatchedFilter, limit, offset int) ([]WatchedFilm, int, error) {
+	where, args := filter.where()
+
 	var total int
-	if err := s.db.QueryRowContext(ctx, `SELECT count(*) FROM watched`).Scan(&total); err != nil {
+	err := s.db.QueryRowContext(ctx, `
+		SELECT count(*)
+		FROM watched w
+		JOIN films f ON f.id = w.film_id
+		WHERE `+where, args...).Scan(&total)
+	if err != nil {
 		return nil, 0, err
 	}
 
@@ -201,8 +244,9 @@ func (s *Store) ListWatched(ctx context.Context, limit, offset int) ([]WatchedFi
 		       f.overview, f.poster_path, f.runtime, `+directorNames+`
 		FROM watched w
 		JOIN films f ON f.id = w.film_id
+		WHERE `+where+`
 		ORDER BY w.watched_on DESC, f.name COLLATE NOCASE, f.id
-		LIMIT ? OFFSET ?`, limit, offset)
+		LIMIT ? OFFSET ?`, append(args, limit, offset)...)
 	if err != nil {
 		return nil, 0, err
 	}

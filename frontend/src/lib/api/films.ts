@@ -40,17 +40,31 @@ export function posterUrl(posterPath: string, width: PosterWidth): string {
 }
 
 export interface WatchedFilmsPage {
-  /** Number of watched films overall, not just in this page. */
+  /** Number of watched films the filter keeps, not just in this page. */
   total: number
   films: WatchedFilm[]
 }
 
-/** Returns a page of watched films, most recently watched first. */
-export async function getWatchedFilms(page: {
-  limit: number
-  offset: number
-}): Promise<WatchedFilmsPage> {
-  const query = new URLSearchParams({ limit: String(page.limit), offset: String(page.offset) })
+/** Narrows the watched films down; a filter left out keeps them all. */
+export interface WatchedFilmsFilter {
+  /** A number of stars from 0.5 to 5, or "none" for the films that aren't rated. */
+  rating?: string
+  /** "true" for liked films only. */
+  liked?: string
+  /** First year of the decade the film was released in, e.g. "1990". */
+  decade?: string
+}
+
+/** Returns a page of the watched films the filter keeps, most recently watched first. */
+export async function getWatchedFilms(
+  page: { limit: number; offset: number },
+  filter: WatchedFilmsFilter = {},
+): Promise<WatchedFilmsPage> {
+  const query = new URLSearchParams({
+    ...filter,
+    limit: String(page.limit),
+    offset: String(page.offset),
+  })
   const response = await fetch(`/api/watched?${query}`)
   if (!response.ok) throw await toApiError(response)
   return (await response.json()) as WatchedFilmsPage
