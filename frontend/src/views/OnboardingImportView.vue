@@ -14,7 +14,8 @@ import {
 } from '@lucide/vue'
 
 import { Button } from '@/components/ui/button'
-import { ApiError, uploadExport, type ExportFile } from '@/lib/api/imports'
+import { ApiError } from '@/lib/api/client'
+import { uploadExport, type ExportFile } from '@/lib/api/imports'
 import { filesFromDroppedFolder, filesFromFolderInput } from '@/lib/export-files'
 import { cn } from '@/lib/utils'
 

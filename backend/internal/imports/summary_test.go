@@ -48,7 +48,7 @@ func zipExport(t *testing.T, prefix string, files map[string]string) []byte {
 // uploadAndSummarize stores files through Upload, then asks for their summary.
 func uploadAndSummarize(t *testing.T, files ...upload) Summary {
 	t.Helper()
-	h := NewHandler(t.TempDir())
+	h, _ := newHandler(t, t.TempDir())
 
 	rec := httptest.NewRecorder()
 	h.Upload(rec, newRequest(t, files...))
@@ -118,7 +118,7 @@ func TestSummaryPartialExport(t *testing.T) {
 }
 
 func TestSummaryJSONShape(t *testing.T) {
-	h := NewHandler(t.TempDir())
+	h, _ := newHandler(t, t.TempDir())
 	rec := httptest.NewRecorder()
 	h.Upload(rec, newRequest(t, upload{"root/watched.csv", []byte(filmHeader)}))
 	id := importID(t, rec)
@@ -130,7 +130,7 @@ func TestSummaryJSONShape(t *testing.T) {
 }
 
 func TestSummaryNotFound(t *testing.T) {
-	h := NewHandler(t.TempDir())
+	h, _ := newHandler(t, t.TempDir())
 	for _, id := range []string{"UNKNOWNIMPORTID", "", "..", "../imports", "a/b", "lower"} {
 		if rec := getSummary(h, id); rec.Code != http.StatusNotFound {
 			t.Errorf("id %q: status = %d, want 404", id, rec.Code)

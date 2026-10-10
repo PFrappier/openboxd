@@ -31,8 +31,7 @@ const options: {
 const router = useRouter()
 
 function start(mode: StartMode) {
-  if (mode === 'import') router.push({ name: 'onboarding-import' })
-  // TODO: 'scratch' goes straight to the app once it exists.
+  router.push({ name: mode === 'import' ? 'onboarding-import' : 'films' })
 }
 </script>
 

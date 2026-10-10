@@ -14,7 +14,9 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 
+	"codeberg.org/pfrappier/openboxd/backend/internal/database"
 	"codeberg.org/pfrappier/openboxd/backend/internal/imports"
+	"codeberg.org/pfrappier/openboxd/backend/internal/library"
 )
 
 // Defaults suit regular API calls. Routes that need more time, like uploads,
@@ -43,7 +45,18 @@ func run() error {
 	addr := envOr("ADDR", ":8080")
 	dataDir := envOr("DATA_DIR", "data")
 
-	importHandler := imports.NewHandler(filepath.Join(dataDir, "imports"))
+	if err := os.MkdirAll(dataDir, 0o750); err != nil {
+		return err
+	}
+	db, err := database.Open(ctx, filepath.Join(dataDir, "openboxd.db"))
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+
+	store := library.NewStore(db)
+	importHandler := imports.NewHandler(filepath.Join(dataDir, "imports"), store)
+	libraryHandler := library.NewHandler(store)
 
 	r := chi.NewRouter()
 	r.Use(middleware.RequestID)
@@ -53,6 +66,7 @@ func run() error {
 	r.Route("/api", func(r chi.Router) {
 		r.Post("/imports", importHandler.Upload)
 		r.Get("/imports/{id}", importHandler.Summary)
+		r.Get("/watched", libraryHandler.Watched)
 	})
 
 	srv := &http.Server{

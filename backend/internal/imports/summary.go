@@ -13,6 +13,8 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+
+	"codeberg.org/pfrappier/openboxd/backend/internal/respond"
 )
 
 // Summary describes what a stored export contains.
@@ -40,18 +42,18 @@ type Counts struct {
 func (h *Handler) Summary(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	if !isImportID(id) {
-		writeError(w, http.StatusNotFound, "import not found")
+		respond.Error(w, http.StatusNotFound, "import not found")
 		return
 	}
 
 	export, closeExport, err := openExport(filepath.Join(h.dir, id))
 	if errors.Is(err, fs.ErrNotExist) {
-		writeError(w, http.StatusNotFound, "import not found")
+		respond.Error(w, http.StatusNotFound, "import not found")
 		return
 	}
 	if err != nil {
 		slog.ErrorContext(r.Context(), "open export", "id", id, "err", err)
-		writeError(w, http.StatusInternalServerError, "could not read the export")
+		respond.Error(w, http.StatusInternalServerError, "could not read the export")
 		return
 	}
 	defer closeExport()
@@ -59,11 +61,11 @@ func (h *Handler) Summary(w http.ResponseWriter, r *http.Request) {
 	summary, err := summarize(export)
 	if err != nil {
 		slog.ErrorContext(r.Context(), "summarize export", "id", id, "err", err)
-		writeError(w, http.StatusInternalServerError, "could not read the export")
+		respond.Error(w, http.StatusInternalServerError, "could not read the export")
 		return
 	}
 	summary.ID = id
-	writeJSON(w, http.StatusOK, summary)
+	respond.JSON(w, http.StatusOK, summary)
 }
 
 // isImportID reports whether id looks like one made by Upload, which keeps
@@ -96,54 +98,97 @@ func openExport(dir string) (fs.FS, func() error, error) {
 	return zr, zr.Close, nil
 }
 
-func summarize(export fs.FS) (Summary, error) {
-	var s Summary
-	err := fs.WalkDir(export, ".", func(name string, d fs.DirEntry, err error) error {
+// fileKind tells which data a file of the export holds.
+type fileKind int
+
+const (
+	otherFile fileKind = iota
+	profileFile
+	watchedFile
+	ratingsFile
+	diaryFile
+	reviewsFile
+	watchlistFile
+	likedFilmsFile
+	listFile
+)
+
+var rootFiles = map[string]fileKind{
+	"profile.csv":   profileFile,
+	"watched.csv":   watchedFile,
+	"ratings.csv":   ratingsFile,
+	"diary.csv":     diaryFile,
+	"reviews.csv":   reviewsFile,
+	"watchlist.csv": watchlistFile,
+}
+
+// classify recognizes a file of the export from its slash-separated path.
+func classify(name string) fileKind {
+	if !strings.EqualFold(path.Ext(name), ".csv") {
+		return otherFile
+	}
+	segments := strings.Split(name, "/")
+	// Entries the user deleted on Letterboxd are exported too.
+	if slices.Contains(segments, "deleted") || slices.Contains(segments, "orphaned") {
+		return otherFile
+	}
+	// Matching on the parent folder rather than the full path also accepts
+	// archives that wrap the export in a root folder.
+	parent := path.Base(path.Dir(name))
+	base := path.Base(name)
+
+	switch parent {
+	case "lists":
+		return listFile
+	case "likes":
+		if base == "films.csv" {
+			return likedFilmsFile
+		}
+		return otherFile
+	}
+	return rootFiles[base]
+}
+
+// walkExport calls fn for every recognized file of the export.
+func walkExport(export fs.FS, fn func(name string, kind fileKind) error) error {
+	return fs.WalkDir(export, ".", func(name string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
-		if d.IsDir() || !strings.EqualFold(path.Ext(name), ".csv") {
+		if d.IsDir() {
 			return nil
 		}
-
-		segments := strings.Split(name, "/")
-		// Entries the user deleted on Letterboxd are exported too.
-		if slices.Contains(segments, "deleted") || slices.Contains(segments, "orphaned") {
-			return nil
+		if kind := classify(name); kind != otherFile {
+			return fn(name, kind)
 		}
-		// Matching on the parent folder rather than the full path also accepts
-		// archives that wrap the export in a root folder.
-		parent := path.Base(path.Dir(name))
-		base := path.Base(name)
+		return nil
+	})
+}
 
-		switch {
-		case parent == "lists":
-			s.Counts.Lists++
-			return nil
-		case parent == "likes":
-			if base == "films.csv" {
-				return countRows(export, name, &s.Counts.Likes)
-			}
-			return nil
-		}
-
-		switch base {
-		case "profile.csv":
+func summarize(export fs.FS) (Summary, error) {
+	var s Summary
+	err := walkExport(export, func(name string, kind fileKind) error {
+		switch kind {
+		case profileFile:
 			username, err := readUsername(export, name)
 			if err != nil {
 				return err
 			}
 			s.Username = username
-		case "watched.csv":
+		case watchedFile:
 			return countRows(export, name, &s.Counts.Watched)
-		case "ratings.csv":
+		case ratingsFile:
 			return countRows(export, name, &s.Counts.Ratings)
-		case "diary.csv":
+		case diaryFile:
 			return countRows(export, name, &s.Counts.Diary)
-		case "reviews.csv":
+		case reviewsFile:
 			return countRows(export, name, &s.Counts.Reviews)
-		case "watchlist.csv":
+		case watchlistFile:
 			return countRows(export, name, &s.Counts.Watchlist)
+		case likedFilmsFile:
+			return countRows(export, name, &s.Counts.Likes)
+		case listFile:
+			s.Counts.Lists++
 		}
 		return nil
 	})

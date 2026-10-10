@@ -15,12 +15,8 @@ import {
 } from '@lucide/vue'
 
 import { Button } from '@/components/ui/button'
-import {
-  ApiError,
-  getImportSummary,
-  type ImportSection,
-  type ImportSummary,
-} from '@/lib/api/imports'
+import { ApiError } from '@/lib/api/client'
+import { getImportSummary, type ImportSection, type ImportSummary } from '@/lib/api/imports'
 
 const props = defineProps<{ id: string }>()
 
@@ -118,10 +114,11 @@ const formatCount = (count: number) => count.toLocaleString('fr-FR')
         <Button variant="ghost" class="sm:-ml-2.5" as-child>
           <RouterLink :to="{ name: 'onboarding-import' }">Importer un autre export</RouterLink>
         </Button>
-        <!-- TODO: link to the app once it exists. -->
-        <Button :disabled="!summary">
-          Accéder à Openboxd
-          <ArrowRight data-icon="inline-end" />
+        <Button as-child>
+          <RouterLink :to="{ name: 'films' }">
+            Accéder à Openboxd
+            <ArrowRight data-icon="inline-end" />
+          </RouterLink>
         </Button>
       </footer>
     </template>

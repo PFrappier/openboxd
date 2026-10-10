@@ -11,6 +11,9 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"codeberg.org/pfrappier/openboxd/backend/internal/database"
+	"codeberg.org/pfrappier/openboxd/backend/internal/library"
 )
 
 type upload struct {
@@ -53,11 +56,25 @@ func zipBytes(t *testing.T, names ...string) []byte {
 	return buf.Bytes()
 }
 
+// newHandler returns a handler storing exports under dir, backed by a library
+// in its own temporary database.
+func newHandler(t *testing.T, dir string) (*Handler, *library.Store) {
+	t.Helper()
+	db, err := database.Open(t.Context(), filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { db.Close() })
+	store := library.NewStore(db)
+	return NewHandler(dir, store), store
+}
+
 func serve(t *testing.T, req *http.Request) (*httptest.ResponseRecorder, string) {
 	t.Helper()
 	dir := t.TempDir()
+	h, _ := newHandler(t, dir)
 	rec := httptest.NewRecorder()
-	NewHandler(dir).Upload(rec, req)
+	h.Upload(rec, req)
 	return rec, dir
 }
 

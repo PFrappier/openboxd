@@ -1,13 +1,14 @@
 // Package imports receives Letterboxd data exports.
 //
-// Parsing comes later: for now an upload is only validated and stored on disk
-// under its own directory, named after the returned import ID.
+// An upload is validated and stored on disk under its own directory, named
+// after the returned import ID, then imported into the library. Only watched
+// films are imported for now; the stored export lets later versions import
+// the rest without asking the user for it again.
 package imports
 
 import (
 	"archive/zip"
 	"crypto/rand"
-	"encoding/json"
 	"errors"
 	"io"
 	"io/fs"
@@ -20,6 +21,9 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"codeberg.org/pfrappier/openboxd/backend/internal/library"
+	"codeberg.org/pfrappier/openboxd/backend/internal/respond"
 )
 
 const (
@@ -35,11 +39,14 @@ const (
 var errInvalidExport = errors.New("expected a Letterboxd export: a .zip archive or the files of the unzipped folder")
 
 type Handler struct {
-	dir string
+	dir   string
+	store *library.Store
 }
 
-func NewHandler(dir string) *Handler {
-	return &Handler{dir: dir}
+// NewHandler returns a handler that keeps uploaded exports under dir and
+// imports their content into store.
+func NewHandler(dir string, store *library.Store) *Handler {
+	return &Handler{dir: dir, store: store}
 }
 
 // Upload handles a multipart request whose "export" field holds either the
@@ -51,7 +58,7 @@ func (h *Handler) Upload(w http.ResponseWriter, r *http.Request) {
 	r.Body = http.MaxBytesReader(w, r.Body, maxUploadSize)
 	mr, err := r.MultipartReader()
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "expected a multipart/form-data request")
+		respond.Error(w, http.StatusBadRequest, "expected a multipart/form-data request")
 		return
 	}
 
@@ -59,7 +66,7 @@ func (h *Handler) Upload(w http.ResponseWriter, r *http.Request) {
 	dest := filepath.Join(h.dir, id)
 	if err := os.MkdirAll(dest, 0o750); err != nil {
 		slog.ErrorContext(r.Context(), "create import dir", "err", err)
-		writeError(w, http.StatusInternalServerError, "could not store the export")
+		respond.Error(w, http.StatusInternalServerError, "could not store the export")
 		return
 	}
 
@@ -68,17 +75,24 @@ func (h *Handler) Upload(w http.ResponseWriter, r *http.Request) {
 		var maxBytesErr *http.MaxBytesError
 		switch {
 		case errors.As(err, &maxBytesErr):
-			writeError(w, http.StatusRequestEntityTooLarge, "export is too large")
+			respond.Error(w, http.StatusRequestEntityTooLarge, "export is too large")
 		case errors.Is(err, errInvalidExport):
-			writeError(w, http.StatusBadRequest, err.Error())
+			respond.Error(w, http.StatusBadRequest, err.Error())
 		default:
 			slog.ErrorContext(r.Context(), "save export", "err", err)
-			writeError(w, http.StatusInternalServerError, "could not store the export")
+			respond.Error(w, http.StatusInternalServerError, "could not store the export")
 		}
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, map[string]string{"id": id})
+	if err := h.importExport(r.Context(), dest); err != nil {
+		os.RemoveAll(dest)
+		slog.ErrorContext(r.Context(), "import export", "err", err)
+		respond.Error(w, http.StatusInternalServerError, "could not import the export")
+		return
+	}
+
+	respond.JSON(w, http.StatusCreated, map[string]string{"id": id})
 }
 
 func extendDeadlines(w http.ResponseWriter, r *http.Request) {
@@ -209,14 +223,4 @@ func saveFile(src io.Reader, dst string) error {
 		return err
 	}
 	return f.Close()
-}
-
-func writeJSON(w http.ResponseWriter, status int, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(v)
-}
-
-func writeError(w http.ResponseWriter, status int, msg string) {
-	writeJSON(w, status, map[string]string{"error": msg})
 }

@@ -1,3 +1,5 @@
+import { toApiError } from './client'
+
 /** A file of the export, with its path relative to the export root's parent folder. */
 export interface ExportFile {
   file: File
@@ -31,15 +33,6 @@ export interface ImportSummary {
 export type ImportSection =
   'watched' | 'ratings' | 'diary' | 'reviews' | 'watchlist' | 'likes' | 'lists'
 
-export class ApiError extends Error {
-  constructor(
-    readonly status: number,
-    message: string,
-  ) {
-    super(message)
-  }
-}
-
 /** Sends the ZIP archive, or every CSV file of the unzipped folder, and returns the import ID. */
 export async function uploadExport(files: ExportFile[]): Promise<string> {
   const body = new FormData()
@@ -56,9 +49,4 @@ export async function getImportSummary(id: string): Promise<ImportSummary> {
   const response = await fetch(`/api/imports/${encodeURIComponent(id)}`)
   if (!response.ok) throw await toApiError(response)
   return (await response.json()) as ImportSummary
-}
-
-async function toApiError(response: Response): Promise<ApiError> {
-  const body = (await response.json().catch(() => null)) as { error?: string } | null
-  return new ApiError(response.status, body?.error ?? response.statusText)
 }
