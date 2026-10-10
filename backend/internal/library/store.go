@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 )
 
 // ErrNotFound is returned when the library doesn't hold the requested film.
@@ -223,10 +224,61 @@ func (wf WatchedFilter) where() (string, []any) {
 	return conditions, args
 }
 
-// ListWatched returns a page of the watched films the filter keeps, most
-// recently watched first, along with how many films it keeps in total.
-func (s *Store) ListWatched(ctx context.Context, filter WatchedFilter, limit, offset int) ([]WatchedFilm, int, error) {
+// WatchedSort is an order to list the watched films in.
+type WatchedSort string
+
+const (
+	// The day the film was marked as watched.
+	SortAddedDesc WatchedSort = "added-desc"
+	SortAddedAsc  WatchedSort = "added-asc"
+	SortNameAsc   WatchedSort = "name-asc"
+	SortNameDesc  WatchedSort = "name-desc"
+	// The year the film was released.
+	SortReleaseDesc WatchedSort = "release-desc"
+	SortReleaseAsc  WatchedSort = "release-asc"
+	// The user's rating of the film.
+	SortRatingDesc WatchedSort = "rating-desc"
+	SortRatingAsc  WatchedSort = "rating-asc"
+	// The day the user rated the film.
+	SortRatedDesc   WatchedSort = "rated-desc"
+	SortRatedAsc    WatchedSort = "rated-asc"
+	SortRuntimeDesc WatchedSort = "runtime-desc"
+	SortRuntimeAsc  WatchedSort = "runtime-asc"
+)
+
+// watchedOrders holds what each sort orders film f, watched as w, by. Films
+// lacking what they are sorted by come last in both directions; the name then
+// the ID settle the ties, so that pages never overlap.
+var watchedOrders = map[WatchedSort]string{
+	SortAddedDesc:   `w.watched_on DESC`,
+	SortAddedAsc:    `w.watched_on`,
+	SortNameAsc:     `f.name COLLATE NOCASE`,
+	SortNameDesc:    `f.name COLLATE NOCASE DESC`,
+	SortReleaseDesc: `f.year DESC NULLS LAST`,
+	SortReleaseAsc:  `f.year NULLS LAST`,
+	SortRatingDesc:  `(SELECT half_stars FROM ratings WHERE film_id = f.id) DESC NULLS LAST`,
+	SortRatingAsc:   `(SELECT half_stars FROM ratings WHERE film_id = f.id) NULLS LAST`,
+	SortRatedDesc:   `(SELECT rated_on FROM ratings WHERE film_id = f.id) DESC NULLS LAST`,
+	SortRatedAsc:    `(SELECT rated_on FROM ratings WHERE film_id = f.id) NULLS LAST`,
+	SortRuntimeDesc: `f.runtime DESC NULLS LAST`,
+	SortRuntimeAsc:  `f.runtime NULLS LAST`,
+}
+
+// Valid reports whether the sort is one the films can be listed in.
+func (ws WatchedSort) Valid() bool {
+	_, ok := watchedOrders[ws]
+	return ok
+}
+
+// ListWatched returns a page of the watched films the filter keeps, in the
+// order of the sort, along with how many films the filter keeps in total. The
+// sort must be valid.
+func (s *Store) ListWatched(ctx context.Context, filter WatchedFilter, sort WatchedSort, limit, offset int) ([]WatchedFilm, int, error) {
 	where, args := filter.where()
+	order, ok := watchedOrders[sort]
+	if !ok {
+		return nil, 0, fmt.Errorf("library: unknown sort %q", sort)
+	}
 
 	var total int
 	err := s.db.QueryRowContext(ctx, `
@@ -245,7 +297,7 @@ func (s *Store) ListWatched(ctx context.Context, filter WatchedFilter, limit, of
 		FROM watched w
 		JOIN films f ON f.id = w.film_id
 		WHERE `+where+`
-		ORDER BY w.watched_on DESC, f.name COLLATE NOCASE, f.id
+		ORDER BY `+order+`, f.name COLLATE NOCASE, f.id
 		LIMIT ? OFFSET ?`, append(args, limit, offset)...)
 	if err != nil {
 		return nil, 0, err

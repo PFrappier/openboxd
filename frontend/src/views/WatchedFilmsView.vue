@@ -8,6 +8,7 @@ const lastShown: { url?: string; result?: WatchedFilmsPage } = {}
 import { computed, onBeforeUnmount, onMounted, ref, useTemplateRef, watch } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 import {
+  ArrowUpDown,
   ChevronLeft,
   ChevronRight,
   CircleAlert,
@@ -23,7 +24,9 @@ import { Button } from '@/components/ui/button'
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
+  SelectLabel,
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
@@ -31,10 +34,12 @@ import { Toggle } from '@/components/ui/toggle'
 import { ApiError } from '@/lib/api/client'
 import {
   getWatchedFilms,
+  WATCHED_FILMS_SORTS,
   posterUrl,
   type WatchedFilm,
   type WatchedFilmsFilter,
   type WatchedFilmsPage,
+  type WatchedFilmsSort,
 } from '@/lib/api/films'
 
 // Splits into whole rows of 3, 5, 6, 10 or 15 films, see fitGrid.
@@ -63,12 +68,75 @@ const filter = computed(() => {
 
 const isFiltered = computed(() => Object.keys(filter.value).length > 0)
 
-// The first page has no page number, so that the unfiltered list keeps the URL the rest
-// of the app links to.
-const pageLocation = (number: number, ofFilter = filter.value) => ({
+const DEFAULT_SORT: WatchedFilmsSort = 'added-desc'
+
+/** Order asked by the URL; anything else than a known one means the default. */
+const sort = computed(
+  () => WATCHED_FILMS_SORTS.find((known) => known === route.query.sort) ?? DEFAULT_SORT,
+)
+
+// The first page in the default order has neither in its URL, so that the unfiltered
+// list keeps the URL the rest of the app links to.
+const pageLocation = (number: number, ofFilter = filter.value, inSort = sort.value) => ({
   name: 'films',
-  query: { ...ofFilter, ...(number > 1 ? { page: number } : {}) },
+  query: {
+    ...ofFilter,
+    ...(inSort !== DEFAULT_SORT ? { sort: inSort } : {}),
+    ...(number > 1 ? { page: number } : {}),
+  },
 })
+
+/** Changes the order, and goes back to the first page. */
+function setSort(value: unknown) {
+  const known = WATCHED_FILMS_SORTS.find((known) => known === value)
+  if (known) return router.push(pageLocation(1, filter.value, known))
+}
+
+// Sorts come in pairs, one for each direction, under the name of what they sort by.
+const SORT_GROUPS: { title: string; sorts: [WatchedFilmsSort, string][] }[] = [
+  {
+    title: 'Date d’ajout',
+    sorts: [
+      ['added-desc', 'Ajout le plus récent'],
+      ['added-asc', 'Ajout le plus ancien'],
+    ],
+  },
+  {
+    title: 'Titre',
+    sorts: [
+      ['name-asc', 'Titre de A à Z'],
+      ['name-desc', 'Titre de Z à A'],
+    ],
+  },
+  {
+    title: 'Année de sortie',
+    sorts: [
+      ['release-desc', 'Sortie la plus récente'],
+      ['release-asc', 'Sortie la plus ancienne'],
+    ],
+  },
+  {
+    title: 'Note',
+    sorts: [
+      ['rating-desc', 'Mieux notés'],
+      ['rating-asc', 'Moins bien notés'],
+    ],
+  },
+  {
+    title: 'Date de notation',
+    sorts: [
+      ['rated-desc', 'Notés le plus récemment'],
+      ['rated-asc', 'Notés le plus anciennement'],
+    ],
+  },
+  {
+    title: 'Durée',
+    sorts: [
+      ['runtime-desc', 'Les plus longs'],
+      ['runtime-asc', 'Les plus courts'],
+    ],
+  },
+]
 
 /** Changes filters, an empty value removing one, and goes back to the first page. */
 function setFilter(changes: WatchedFilmsFilter) {
@@ -92,10 +160,12 @@ const RATINGS = [5, 4.5, 4, 3.5, 3, 2.5, 2, 1.5, 1, 0.5]
 /** e.g. "★★★½". */
 const ratingLabel = (stars: number) => '★'.repeat(Math.floor(stars)) + (stars % 1 ? '½' : '')
 
-// From the current decade back to the first films.
+// From the current decade back to the one of the first films.
+const FIRST_DECADE = 1870
+const CURRENT_DECADE = Math.floor(new Date().getFullYear() / 10) * 10
 const DECADES = Array.from(
-  { length: (Math.floor(new Date().getFullYear() / 10) * 10 - 1880) / 10 + 1 },
-  (_, index) => Math.floor(new Date().getFullYear() / 10) * 10 - index * 10,
+  { length: (CURRENT_DECADE - FIRST_DECADE) / 10 + 1 },
+  (_, index) => CURRENT_DECADE - index * 10,
 )
 
 const films = ref<WatchedFilm[]>([])
@@ -149,6 +219,7 @@ async function load() {
     const result = await getWatchedFilms(
       { limit: PAGE_SIZE, offset: (asked - 1) * PAGE_SIZE },
       filter.value,
+      sort.value,
     )
     if (request !== latestRequest) return
     const lastPage = Math.max(1, Math.ceil(result.total / PAGE_SIZE))
@@ -171,7 +242,7 @@ async function load() {
   }
 }
 
-watch([page, filter], load, { immediate: true })
+watch([page, filter, sort], load, { immediate: true })
 
 const formatCount = (count: number) => count.toLocaleString('fr-FR')
 
@@ -336,6 +407,23 @@ const posterClass =
           />
           Aimés
         </Toggle>
+        <!-- As wide whatever the order, so that the filters don't move when it changes. -->
+        <Select :model-value="sort" @update:model-value="setSort">
+          <SelectTrigger size="sm" class="w-64" aria-label="Trier les films">
+            <span class="flex min-w-0 items-center gap-1.5">
+              <ArrowUpDown class="text-muted-foreground" />
+              <SelectValue />
+            </span>
+          </SelectTrigger>
+          <SelectContent>
+            <SelectGroup v-for="group in SORT_GROUPS" :key="group.title">
+              <SelectLabel>{{ group.title }}</SelectLabel>
+              <SelectItem v-for="[value, label] in group.sorts" :key="value" :value="value">
+                {{ label }}
+              </SelectItem>
+            </SelectGroup>
+          </SelectContent>
+        </Select>
       </div>
     </header>
 

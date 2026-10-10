@@ -155,6 +155,72 @@ func TestWatchedFilters(t *testing.T) {
 	}
 }
 
+func TestWatchedSorts(t *testing.T) {
+	store := newStore(t)
+	year := func(y int) *int { return &y }
+	// Named after the rank of their date, of their release and of their rating.
+	films := []WatchedFilm{
+		{Name: "b", Year: year(1999), LetterboxdURI: "https://boxd.it/b", WatchedOn: "2024-01-03"},
+		{Name: "C", Year: year(1979), LetterboxdURI: "https://boxd.it/c", WatchedOn: "2024-01-01"},
+		{Name: "a", Year: year(1986), LetterboxdURI: "https://boxd.it/a", WatchedOn: "2024-01-02"},
+		// Neither released, rated nor timed: last whatever the direction.
+		{Name: "d", LetterboxdURI: "https://boxd.it/d", WatchedOn: "2024-01-02"},
+	}
+	rated := func(f WatchedFilm, halfStars int, on string) RatedFilm {
+		return RatedFilm{Name: f.Name, Year: f.Year, LetterboxdURI: f.LetterboxdURI, HalfStars: halfStars, RatedOn: on}
+	}
+	err := store.Import(t.Context(), Import{
+		Watched: films,
+		Ratings: []RatedFilm{
+			rated(films[0], 6, "2024-02-01"),
+			rated(films[1], 10, "2024-02-03"),
+			rated(films[2], 6, "2024-02-02"),
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.db.Exec(`
+		UPDATE films SET runtime = CASE name WHEN 'a' THEN 90 WHEN 'b' THEN 120 WHEN 'C' THEN 100 END`); err != nil {
+		t.Fatal(err)
+	}
+
+	tests := []struct{ sort, want string }{
+		{"", "badC"},
+		{"added-desc", "badC"},
+		{"added-asc", "Cadb"},
+		{"name-asc", "abCd"},
+		{"name-desc", "dCba"},
+		{"release-desc", "baCd"},
+		{"release-asc", "Cabd"},
+		// Films rated the same are in the order of their names.
+		{"rating-desc", "Cabd"},
+		{"rating-asc", "abCd"},
+		{"rated-desc", "Cabd"},
+		{"rated-asc", "baCd"},
+		{"runtime-desc", "bCad"},
+		{"runtime-asc", "aCbd"},
+	}
+	for _, test := range tests {
+		rec, page := getWatched(t, store, "?sort="+test.sort)
+		var got string
+		for _, f := range page.Films {
+			got += f.Name
+		}
+		if rec.Code != http.StatusOK || got != test.want {
+			t.Errorf("sort %q: status = %d, films = %s, want %s", test.sort, rec.Code, got, test.want)
+		}
+	}
+
+	// A sort goes along with a filter.
+	if _, page := getWatched(t, store, "?sort=name-desc&rating=3"); len(page.Films) != 2 || page.Films[0].Name != "b" {
+		t.Errorf("sorted and filtered: films = %+v, want b then a", page.Films)
+	}
+	if rec, _ := getWatched(t, store, "?sort=name"); rec.Code != http.StatusBadRequest {
+		t.Errorf("unknown sort: status = %d, want %d", rec.Code, http.StatusBadRequest)
+	}
+}
+
 func TestWatchedDetails(t *testing.T) {
 	store := newStore(t)
 	err := store.Import(t.Context(), Import{

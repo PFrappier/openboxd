@@ -23,7 +23,9 @@ func NewHandler(store *Store) *Handler {
 }
 
 // Watched handles GET /api/watched?limit=50&offset=0, which the optional
-// rating, liked and decade parameters narrow down, see watchedFilter.
+// rating, liked and decade parameters narrow down, see watchedFilter, and the
+// optional sort parameter orders: a WatchedSort, most recently watched first
+// by default.
 func (h *Handler) Watched(w http.ResponseWriter, r *http.Request) {
 	limit, ok := queryInt(r, "limit", defaultPageSize)
 	if !ok || limit < 1 {
@@ -42,7 +44,16 @@ func (h *Handler) Watched(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	films, total, err := h.store.ListWatched(r.Context(), filter, min(limit, maxPageSize), offset)
+	sort := SortAddedDesc
+	if raw := r.URL.Query().Get("sort"); raw != "" {
+		sort = WatchedSort(raw)
+	}
+	if !sort.Valid() {
+		respond.Error(w, http.StatusBadRequest, "sort is not a known order")
+		return
+	}
+
+	films, total, err := h.store.ListWatched(r.Context(), filter, sort, min(limit, maxPageSize), offset)
 	if err != nil {
 		slog.ErrorContext(r.Context(), "list watched films", "err", err)
 		respond.Error(w, http.StatusInternalServerError, "could not list watched films")

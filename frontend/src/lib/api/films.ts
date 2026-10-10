@@ -55,13 +55,39 @@ export interface WatchedFilmsFilter {
   decade?: string
 }
 
-/** Returns a page of the watched films the filter keeps, most recently watched first. */
+/** Orders to list the watched films in: by what, then in which direction. */
+export const WATCHED_FILMS_SORTS = [
+  // The day the film was marked as watched.
+  'added-desc',
+  'added-asc',
+  'name-asc',
+  'name-desc',
+  // The year the film was released.
+  'release-desc',
+  'release-asc',
+  'rating-desc',
+  'rating-asc',
+  // The day the film was rated.
+  'rated-desc',
+  'rated-asc',
+  'runtime-desc',
+  'runtime-asc',
+] as const
+
+export type WatchedFilmsSort = (typeof WATCHED_FILMS_SORTS)[number]
+
+/**
+ * Returns a page of the watched films the filter keeps, in the order of the sort: most
+ * recently watched first by default.
+ */
 export async function getWatchedFilms(
   page: { limit: number; offset: number },
   filter: WatchedFilmsFilter = {},
+  sort: WatchedFilmsSort = 'added-desc',
 ): Promise<WatchedFilmsPage> {
   const query = new URLSearchParams({
     ...filter,
+    sort,
     limit: String(page.limit),
     offset: String(page.offset),
   })
