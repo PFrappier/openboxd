@@ -19,6 +19,7 @@ import (
 	"path"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 const (
@@ -26,6 +27,9 @@ const (
 	maxUploadSize = 100 << 20
 	formField     = "export"
 	zipFileName   = "export.zip"
+	// Replaces the server-wide read/write timeouts for this route: enough for
+	// maxUploadSize at ~350 KB/s.
+	uploadTimeout = 5 * time.Minute
 )
 
 var errInvalidExport = errors.New("expected a Letterboxd export: a .zip archive or the files of the unzipped folder")
@@ -43,6 +47,7 @@ func NewHandler(dir string) *Handler {
 // download). In the folder case each part's filename must be its relative
 // path, e.g. "letterboxd-user-2026-10-10/ratings.csv".
 func (h *Handler) Upload(w http.ResponseWriter, r *http.Request) {
+	extendDeadlines(w, r)
 	r.Body = http.MaxBytesReader(w, r.Body, maxUploadSize)
 	mr, err := r.MultipartReader()
 	if err != nil {
@@ -53,7 +58,7 @@ func (h *Handler) Upload(w http.ResponseWriter, r *http.Request) {
 	id := rand.Text()
 	dest := filepath.Join(h.dir, id)
 	if err := os.MkdirAll(dest, 0o750); err != nil {
-		slog.Error("create import dir", "err", err)
+		slog.ErrorContext(r.Context(), "create import dir", "err", err)
 		writeError(w, http.StatusInternalServerError, "could not store the export")
 		return
 	}
@@ -67,13 +72,24 @@ func (h *Handler) Upload(w http.ResponseWriter, r *http.Request) {
 		case errors.Is(err, errInvalidExport):
 			writeError(w, http.StatusBadRequest, err.Error())
 		default:
-			slog.Error("save export", "err", err)
+			slog.ErrorContext(r.Context(), "save export", "err", err)
 			writeError(w, http.StatusInternalServerError, "could not store the export")
 		}
 		return
 	}
 
 	writeJSON(w, http.StatusCreated, map[string]string{"id": id})
+}
+
+func extendDeadlines(w http.ResponseWriter, r *http.Request) {
+	rc := http.NewResponseController(w)
+	deadline := time.Now().Add(uploadTimeout)
+	if err := rc.SetReadDeadline(deadline); err != nil {
+		slog.WarnContext(r.Context(), "extend read deadline", "err", err)
+	}
+	if err := rc.SetWriteDeadline(deadline); err != nil {
+		slog.WarnContext(r.Context(), "extend write deadline", "err", err)
+	}
 }
 
 func saveExport(mr *multipart.Reader, dest string) error {
