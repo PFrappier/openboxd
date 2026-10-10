@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { RouterLink } from 'vue-router'
-import { CircleAlert, Clapperboard, Download, LoaderCircle } from '@lucide/vue'
+import { CircleAlert, Clapperboard, Download, Heart, LoaderCircle } from '@lucide/vue'
 
+import FilmRating from '@/components/FilmRating.vue'
 import { Button } from '@/components/ui/button'
 import { ApiError } from '@/lib/api/client'
 import { getWatchedFilms, posterUrl, type WatchedFilm } from '@/lib/api/films'
@@ -134,10 +135,19 @@ const posterSizes =
               <span v-if="film.year && film.directors.length"> · </span>
               <span v-if="film.directors.length">{{ film.directors.join(', ') }}</span>
             </p>
-            <p class="mt-auto pt-2 text-xs text-muted-foreground">
-              Vu le
-              <time :datetime="film.watchedOn">{{ formatDate(film.watchedOn) }}</time>
-            </p>
+            <div class="mt-auto flex flex-col gap-1 pt-2">
+              <p v-if="film.rating !== null || film.liked" class="flex items-center gap-1.5">
+                <FilmRating v-if="film.rating !== null" :rating="film.rating" />
+                <template v-if="film.liked">
+                  <Heart class="size-[1em] fill-current text-brand" />
+                  <span class="sr-only">Aimé</span>
+                </template>
+              </p>
+              <p class="text-xs text-muted-foreground">
+                Vu le
+                <time :datetime="film.watchedOn">{{ formatDate(film.watchedOn) }}</time>
+              </p>
+            </div>
           </div>
         </RouterLink>
       </li>

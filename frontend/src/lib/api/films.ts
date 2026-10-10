@@ -8,6 +8,9 @@ export interface WatchedFilm {
   letterboxdUri: string
   /** Day the film was marked as watched, as YYYY-MM-DD. */
   watchedOn: string
+  /** In stars, from 0.5 to 5 by steps of 0.5; null for a film that isn't rated. */
+  rating: number | null
+  liked: boolean
 
   // The details below come from TMDB: they are null until the server fetched
   // them, and when TMDB lacks them.

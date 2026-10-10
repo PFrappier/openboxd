@@ -2,8 +2,8 @@
 //
 // An upload is validated and stored on disk under its own directory, named
 // after the returned import ID, then imported into the library. Only watched
-// films are imported for now; the stored export lets later versions import
-// the rest without asking the user for it again.
+// films, ratings and likes are imported for now; the stored export lets later
+// versions import the rest without asking the user for it again.
 package imports
 
 import (

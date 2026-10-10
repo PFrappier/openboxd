@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
-import { ArrowLeft, CircleAlert, Clapperboard, ExternalLink } from '@lucide/vue'
+import { ArrowLeft, CircleAlert, Clapperboard, ExternalLink, Heart } from '@lucide/vue'
 
+import FilmRating from '@/components/FilmRating.vue'
 import { Button } from '@/components/ui/button'
 import { ApiError } from '@/lib/api/client'
 import { getFilm, posterUrl, type Film } from '@/lib/api/films'
@@ -115,7 +116,7 @@ const tmdbUrl = computed(() =>
         </header>
 
         <dl
-          v-if="runtime || film.watchedOn"
+          v-if="runtime || film.watchedOn || film.rating !== null || film.liked"
           class="flex flex-wrap gap-x-10 gap-y-4 border-y py-4 text-sm"
         >
           <div v-if="runtime" class="space-y-0.5">
@@ -126,6 +127,20 @@ const tmdbUrl = computed(() =>
             <dt class="text-muted-foreground">Vu le</dt>
             <dd class="font-medium">
               <time :datetime="film.watchedOn">{{ formatDate(film.watchedOn) }}</time>
+            </dd>
+          </div>
+          <div v-if="film.rating !== null" class="space-y-0.5">
+            <dt class="text-muted-foreground">Note</dt>
+            <!-- Same height as the text of the other values. -->
+            <dd class="flex h-5 items-center text-base">
+              <FilmRating :rating="film.rating" />
+            </dd>
+          </div>
+          <div v-if="film.liked" class="space-y-0.5">
+            <dt class="text-muted-foreground">Aimé</dt>
+            <dd class="flex h-5 items-center">
+              <Heart class="size-4 fill-current text-brand" />
+              <span class="sr-only">Oui</span>
             </dd>
           </div>
         </dl>

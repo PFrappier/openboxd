@@ -89,3 +89,61 @@ func TestUploadWithoutWatchedFile(t *testing.T) {
 		t.Errorf("got %d films, want none", len(films))
 	}
 }
+
+func TestUploadImportsRatingsAndLikes(t *testing.T) {
+	const header = "Date,Name,Year,Letterboxd URI"
+	h, store := newHandler(t, t.TempDir())
+	uploadOK(t, h, upload{"export.zip", zipExport(t, "letterboxd-user/", map[string]string{
+		"watched.csv": watchedCSV,
+		"ratings.csv": header + ",Rating\n" +
+			"2024-01-02,Alien,1979,https://boxd.it/2awY,4.5\n" +
+			"2024-03-06,\"Monsters, Inc.\",2001,https://boxd.it/2aGq,0.5\n" +
+			// Not ratings Letterboxd can give: left out.
+			"2024-02-10,Untitled Project,,https://boxd.it/zzzz,7\n" +
+			"2024-02-10,Untitled Project,,https://boxd.it/zzzz,3.2\n" +
+			"2024-02-10,Untitled Project,,https://boxd.it/zzzz,\n",
+		"likes/films.csv": header + "\n" +
+			"2024-01-02,Alien,1979,https://boxd.it/2awY\n" +
+			"2020-01-01,Liked,1999,https://boxd.it/liked\n",
+		"likes/reviews.csv":   header + "\n2024-01-02,Untitled Project,,https://boxd.it/zzzz\n",
+		"deleted/ratings.csv": header + ",Rating\n2020-01-01,Untitled Project,,https://boxd.it/zzzz,5\n",
+	})})
+
+	type opinion struct {
+		rating float64 // 0 when not rated
+		liked  bool
+	}
+	want := map[string]opinion{
+		"Alien":            {4.5, true},
+		"Monsters, Inc.":   {0.5, false},
+		"Untitled Project": {0, false},
+	}
+	films := listWatched(t, store)
+	// The liked film that isn't in watched.csv doesn't become a watched one.
+	if len(films) != len(want) {
+		t.Fatalf("got %d films, want %d: %+v", len(films), len(want), films)
+	}
+	for _, f := range films {
+		got := opinion{liked: f.Liked}
+		if f.Rating != nil {
+			got.rating = *f.Rating
+		}
+		if got != want[f.Name] {
+			t.Errorf("%s: got %+v, want %+v", f.Name, got, want[f.Name])
+		}
+	}
+}
+
+func TestParseRating(t *testing.T) {
+	valid := map[string]int{"0.5": 1, "1": 2, "3.5": 7, "5": 10, "5.0": 10}
+	for stars, want := range valid {
+		if got, ok := parseRating(stars); !ok || got != want {
+			t.Errorf("parseRating(%q) = %d, %t, want %d", stars, got, ok, want)
+		}
+	}
+	for _, stars := range []string{"", "0", "5.5", "3.2", "-1", "NaN", "Inf", "four"} {
+		if got, ok := parseRating(stars); ok {
+			t.Errorf("parseRating(%q) = %d, want it rejected", stars, got)
+		}
+	}
+}

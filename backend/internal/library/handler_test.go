@@ -98,9 +98,17 @@ func TestWatchedPagination(t *testing.T) {
 
 func TestWatchedDetails(t *testing.T) {
 	store := newStore(t)
-	err := store.AddWatched(t.Context(), []WatchedFilm{
-		{Name: "The Matrix", LetterboxdURI: "https://boxd.it/2a1m", WatchedOn: "2024-01-02"},
-		{Name: "Not on TMDB", LetterboxdURI: "https://boxd.it/0", WatchedOn: "2024-01-01"},
+	err := store.Import(t.Context(), Import{
+		Watched: []WatchedFilm{
+			{Name: "The Matrix", LetterboxdURI: "https://boxd.it/2a1m", WatchedOn: "2024-01-02"},
+			{Name: "Not on TMDB", LetterboxdURI: "https://boxd.it/0", WatchedOn: "2024-01-01"},
+		},
+		Ratings: []RatedFilm{
+			{Name: "The Matrix", LetterboxdURI: "https://boxd.it/2a1m", HalfStars: 9, RatedOn: "2024-01-03"},
+		},
+		Likes: []LikedFilm{
+			{Name: "The Matrix", LetterboxdURI: "https://boxd.it/2a1m", LikedOn: "2024-01-03"},
+		},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -121,9 +129,11 @@ func TestWatchedDetails(t *testing.T) {
 	rec, _ := getWatched(t, store, "")
 	want := `{"total":2,"films":[` +
 		`{"id":1,"name":"The Matrix","year":null,"letterboxdUri":"https://boxd.it/2a1m","watchedOn":"2024-01-02",` +
+		`"rating":4.5,"liked":true,` +
 		`"overview":"Un pirate informatique découvre la Matrice.","posterPath":"/matrix.jpg","runtime":136,` +
 		`"directors":["Lilly Wachowski","Lana Wachowski"]},` +
 		`{"id":2,"name":"Not on TMDB","year":null,"letterboxdUri":"https://boxd.it/0","watchedOn":"2024-01-01",` +
+		`"rating":null,"liked":false,` +
 		`"overview":null,"posterPath":null,"runtime":null,"directors":[]}]}` + "\n"
 	if rec.Body.String() != want {
 		t.Errorf("body = %s\nwant %s", rec.Body, want)
@@ -150,6 +160,7 @@ func TestFilm(t *testing.T) {
 	// Before its details are fetched.
 	rec := getFilm(store, "1")
 	want := `{"id":1,"name":"The Matrix","year":null,"letterboxdUri":"https://boxd.it/2a1m","watchedOn":"2024-01-02",` +
+		`"rating":null,"liked":false,` +
 		`"tmdbId":null,"overview":null,"posterPath":null,"runtime":null,"directors":[]}` + "\n"
 	if rec.Code != http.StatusOK || rec.Body.String() != want {
 		t.Errorf("status = %d, body = %s\nwant %s", rec.Code, rec.Body, want)
@@ -167,10 +178,67 @@ func TestFilm(t *testing.T) {
 	}
 	rec = getFilm(store, "1")
 	want = `{"id":1,"name":"The Matrix","year":null,"letterboxdUri":"https://boxd.it/2a1m","watchedOn":"2024-01-02",` +
+		`"rating":null,"liked":false,` +
 		`"tmdbId":603,"overview":"Un pirate informatique découvre la Matrice.","posterPath":"/matrix.jpg","runtime":136,` +
 		`"directors":["Lilly Wachowski","Lana Wachowski"]}` + "\n"
 	if rec.Code != http.StatusOK || rec.Body.String() != want {
 		t.Errorf("status = %d, body = %s\nwant %s", rec.Code, rec.Body, want)
+	}
+}
+
+func TestFilmRatedAndLiked(t *testing.T) {
+	store := newStore(t)
+	matrix := func(halfStars int) Import {
+		return Import{
+			Ratings: []RatedFilm{
+				{Name: "The Matrix", LetterboxdURI: "https://boxd.it/2a1m", HalfStars: halfStars, RatedOn: "2024-01-03"},
+			},
+			// Liking a film doesn't require having watched it.
+			Likes: []LikedFilm{
+				{Name: "Alien", LetterboxdURI: "https://boxd.it/2awY", LikedOn: "2024-01-04"},
+			},
+		}
+	}
+	// Importing again replaces the rating instead of failing or duplicating.
+	for _, halfStars := range []int{7, 10} {
+		if err := store.Import(t.Context(), matrix(halfStars)); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	rec := getFilm(store, "1")
+	want := `{"id":1,"name":"The Matrix","year":null,"letterboxdUri":"https://boxd.it/2a1m","watchedOn":null,` +
+		`"rating":5,"liked":false,` +
+		`"tmdbId":null,"overview":null,"posterPath":null,"runtime":null,"directors":[]}` + "\n"
+	if rec.Code != http.StatusOK || rec.Body.String() != want {
+		t.Errorf("status = %d, body = %s\nwant %s", rec.Code, rec.Body, want)
+	}
+
+	rec = getFilm(store, "2")
+	want = `{"id":2,"name":"Alien","year":null,"letterboxdUri":"https://boxd.it/2awY","watchedOn":null,` +
+		`"rating":null,"liked":true,` +
+		`"tmdbId":null,"overview":null,"posterPath":null,"runtime":null,"directors":[]}` + "\n"
+	if rec.Code != http.StatusOK || rec.Body.String() != want {
+		t.Errorf("status = %d, body = %s\nwant %s", rec.Code, rec.Body, want)
+	}
+
+	if _, page := getWatched(t, store, ""); page.Total != 0 {
+		t.Errorf("rated and liked films count as watched: total = %d", page.Total)
+	}
+}
+
+func TestImportRejectsInvalidRating(t *testing.T) {
+	store := newStore(t)
+	err := store.Import(t.Context(), Import{
+		Watched: []WatchedFilm{{Name: "Alien", LetterboxdURI: "https://boxd.it/2awY", WatchedOn: "2024-01-01"}},
+		Ratings: []RatedFilm{{Name: "Alien", LetterboxdURI: "https://boxd.it/2awY", HalfStars: 11, RatedOn: "2024-01-01"}},
+	})
+	if err == nil {
+		t.Fatal("a rating of 11 half stars was accepted")
+	}
+	// All or none: the watched film of the same import isn't kept either.
+	if _, page := getWatched(t, store, ""); page.Total != 0 {
+		t.Errorf("total = %d after a failed import, want 0", page.Total)
 	}
 }
 
