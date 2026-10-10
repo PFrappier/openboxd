@@ -130,6 +130,59 @@ func TestWatchedDetails(t *testing.T) {
 	}
 }
 
+func getFilm(store *Store, id string) *httptest.ResponseRecorder {
+	req := httptest.NewRequest(http.MethodGet, "/api/films/"+id, nil)
+	req.SetPathValue("id", id)
+	rec := httptest.NewRecorder()
+	NewHandler(store).Film(rec, req)
+	return rec
+}
+
+func TestFilm(t *testing.T) {
+	store := newStore(t)
+	err := store.AddWatched(t.Context(), []WatchedFilm{
+		{Name: "The Matrix", LetterboxdURI: "https://boxd.it/2a1m", WatchedOn: "2024-01-02"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Before its details are fetched.
+	rec := getFilm(store, "1")
+	want := `{"id":1,"name":"The Matrix","year":null,"letterboxdUri":"https://boxd.it/2a1m","watchedOn":"2024-01-02",` +
+		`"tmdbId":null,"overview":null,"posterPath":null,"runtime":null,"directors":[]}` + "\n"
+	if rec.Code != http.StatusOK || rec.Body.String() != want {
+		t.Errorf("status = %d, body = %s\nwant %s", rec.Code, rec.Body, want)
+	}
+
+	err = store.SetMetadata(t.Context(), 1, Metadata{
+		TMDBID:     603,
+		Overview:   "Un pirate informatique découvre la Matrice.",
+		PosterPath: "/matrix.jpg",
+		Runtime:    136,
+		Directors:  []Person{{TMDBID: 9340, Name: "Lilly Wachowski"}, {TMDBID: 9339, Name: "Lana Wachowski"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	rec = getFilm(store, "1")
+	want = `{"id":1,"name":"The Matrix","year":null,"letterboxdUri":"https://boxd.it/2a1m","watchedOn":"2024-01-02",` +
+		`"tmdbId":603,"overview":"Un pirate informatique découvre la Matrice.","posterPath":"/matrix.jpg","runtime":136,` +
+		`"directors":["Lilly Wachowski","Lana Wachowski"]}` + "\n"
+	if rec.Code != http.StatusOK || rec.Body.String() != want {
+		t.Errorf("status = %d, body = %s\nwant %s", rec.Code, rec.Body, want)
+	}
+}
+
+func TestFilmNotFound(t *testing.T) {
+	store := newStore(t)
+	for _, id := range []string{"1", "abc", "-1", ""} {
+		if rec := getFilm(store, id); rec.Code != http.StatusNotFound {
+			t.Errorf("film %q: status = %d, want 404", id, rec.Code)
+		}
+	}
+}
+
 func TestWatchedBadQuery(t *testing.T) {
 	store := newStore(t)
 	for _, query := range []string{"?limit=0", "?limit=-1", "?limit=abc", "?offset=-1", "?offset=x"} {

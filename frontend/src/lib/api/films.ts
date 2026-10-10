@@ -20,6 +20,14 @@ export interface WatchedFilm {
   directors: string[]
 }
 
+/** A film of the library, as returned by `GET /api/films/{id}`. */
+export interface Film extends Omit<WatchedFilm, 'watchedOn'> {
+  /** Null for a film that isn't marked as watched. */
+  watchedOn: string | null
+  /** Null until the film is matched with TMDB, and when TMDB doesn't know it. */
+  tmdbId: number | null
+}
+
 /** Widths TMDB serves posters in, among others. */
 export type PosterWidth = 92 | 154 | 185 | 342 | 500 | 780
 
@@ -43,4 +51,11 @@ export async function getWatchedFilms(page: {
   const response = await fetch(`/api/watched?${query}`)
   if (!response.ok) throw await toApiError(response)
   return (await response.json()) as WatchedFilmsPage
+}
+
+/** Returns a film of the library; the error has status 404 when there is no such film. */
+export async function getFilm(id: number | string): Promise<Film> {
+  const response = await fetch(`/api/films/${encodeURIComponent(id)}`)
+  if (!response.ok) throw await toApiError(response)
+  return (await response.json()) as Film
 }

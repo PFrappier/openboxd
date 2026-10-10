@@ -6,6 +6,7 @@ import { CircleAlert, Clapperboard, Download, LoaderCircle } from '@lucide/vue'
 import { Button } from '@/components/ui/button'
 import { ApiError } from '@/lib/api/client'
 import { getWatchedFilms, posterUrl, type WatchedFilm } from '@/lib/api/films'
+import { formatDate } from '@/lib/dates'
 
 // Fills whole rows whatever the number of columns, from 2 to 6.
 const PAGE_SIZE = 60
@@ -36,14 +37,6 @@ async function loadMore() {
 }
 
 onMounted(loadMore)
-
-const dateFormat = new Intl.DateTimeFormat('fr-FR', { dateStyle: 'medium', timeZone: 'UTC' })
-
-/** Formats a YYYY-MM-DD date, read as UTC so the day never shifts with the time zone. */
-function formatDate(isoDate: string) {
-  const date = new Date(`${isoDate}T00:00:00Z`)
-  return Number.isNaN(date.getTime()) ? isoDate : dateFormat.format(date)
-}
 
 const formatCount = (count: number) => count.toLocaleString('fr-FR')
 
@@ -114,38 +107,39 @@ const posterSizes =
     </div>
 
     <ul v-else-if="films.length" :class="gridClass">
-      <li
-        v-for="film in films"
-        :key="film.id"
-        class="flex flex-col overflow-hidden rounded-xl border bg-card text-card-foreground"
-      >
-        <!-- The poster is decorative: the title is right under it. -->
-        <img
-          v-if="film.posterPath"
-          :src="posterUrl(film.posterPath, 342)"
-          :srcset="posterSrcset(film.posterPath)"
-          :sizes="posterSizes"
-          alt=""
-          width="342"
-          height="513"
-          loading="lazy"
-          class="aspect-2/3 w-full bg-muted object-cover"
-        />
-        <div v-else class="flex aspect-2/3 w-full items-center justify-center bg-muted">
-          <Clapperboard class="size-8 text-muted-foreground" />
-        </div>
-        <div class="flex flex-1 flex-col gap-0.5 p-3 text-sm">
-          <p class="line-clamp-2 font-medium">{{ film.name }}</p>
-          <p class="truncate text-muted-foreground">
-            <span v-if="film.year">{{ film.year }}</span>
-            <span v-if="film.year && film.directors.length"> · </span>
-            <span v-if="film.directors.length">{{ film.directors.join(', ') }}</span>
-          </p>
-          <p class="mt-auto pt-2 text-xs text-muted-foreground">
-            Vu le
-            <time :datetime="film.watchedOn">{{ formatDate(film.watchedOn) }}</time>
-          </p>
-        </div>
+      <li v-for="film in films" :key="film.id">
+        <RouterLink
+          :to="{ name: 'film', params: { id: film.id } }"
+          class="flex h-full flex-col overflow-hidden rounded-xl border bg-card text-card-foreground transition-colors outline-none hover:border-foreground/40 focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+        >
+          <!-- The poster is decorative: the title is right under it. -->
+          <img
+            v-if="film.posterPath"
+            :src="posterUrl(film.posterPath, 342)"
+            :srcset="posterSrcset(film.posterPath)"
+            :sizes="posterSizes"
+            alt=""
+            width="342"
+            height="513"
+            loading="lazy"
+            class="aspect-2/3 w-full bg-muted object-cover"
+          />
+          <div v-else class="flex aspect-2/3 w-full items-center justify-center bg-muted">
+            <Clapperboard class="size-8 text-muted-foreground" />
+          </div>
+          <div class="flex flex-1 flex-col gap-0.5 p-3 text-sm">
+            <p class="line-clamp-2 font-medium">{{ film.name }}</p>
+            <p class="truncate text-muted-foreground">
+              <span v-if="film.year">{{ film.year }}</span>
+              <span v-if="film.year && film.directors.length"> · </span>
+              <span v-if="film.directors.length">{{ film.directors.join(', ') }}</span>
+            </p>
+            <p class="mt-auto pt-2 text-xs text-muted-foreground">
+              Vu le
+              <time :datetime="film.watchedOn">{{ formatDate(film.watchedOn) }}</time>
+            </p>
+          </div>
+        </RouterLink>
       </li>
     </ul>
 

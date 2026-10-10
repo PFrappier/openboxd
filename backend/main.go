@@ -88,6 +88,7 @@ func run() error {
 		r.Post("/imports", importHandler.Upload)
 		r.Get("/imports/{id}", importHandler.Summary)
 		r.Get("/watched", libraryHandler.Watched)
+		r.Get("/films/{id}", libraryHandler.Film)
 	})
 
 	srv := &http.Server{

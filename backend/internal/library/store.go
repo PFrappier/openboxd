@@ -5,7 +5,11 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 )
+
+// ErrNotFound is returned when the library doesn't hold the requested film.
+var ErrNotFound = errors.New("library: film not found")
 
 // WatchedFilm is a film the user marked as watched.
 type WatchedFilm struct {
@@ -27,6 +31,31 @@ type WatchedFilm struct {
 	// Directors holds their names, in the order TMDB credits them.
 	Directors []string `json:"directors"`
 }
+
+// Film is a film of the library, with everything known about it.
+type Film struct {
+	ID            int64  `json:"id"`
+	Name          string `json:"name"`
+	Year          *int   `json:"year"`
+	LetterboxdURI string `json:"letterboxdUri"`
+	// WatchedOn is null for a film that isn't marked as watched.
+	WatchedOn *string `json:"watchedOn"`
+
+	// The details below come from TMDB, as in WatchedFilm.
+	TMDBID     *int64   `json:"tmdbId"`
+	Overview   *string  `json:"overview"`
+	PosterPath *string  `json:"posterPath"`
+	Runtime    *int     `json:"runtime"`
+	Directors  []string `json:"directors"`
+}
+
+// directorNames selects the names of the directors of film f as a JSON array,
+// in the order TMDB credits them; [] for a film without known director.
+const directorNames = `(
+	SELECT json_group_array(p.name ORDER BY d.position)
+	FROM film_directors d
+	JOIN people p ON p.id = d.person_id
+	WHERE d.film_id = f.id)`
 
 type Store struct {
 	db *sql.DB
@@ -85,11 +114,7 @@ func (s *Store) ListWatched(ctx context.Context, limit, offset int) ([]WatchedFi
 
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT f.id, f.name, f.year, f.letterboxd_uri, w.watched_on,
-		       f.overview, f.poster_path, f.runtime,
-		       (SELECT json_group_array(p.name ORDER BY d.position)
-		        FROM film_directors d
-		        JOIN people p ON p.id = d.person_id
-		        WHERE d.film_id = f.id)
+		       f.overview, f.poster_path, f.runtime, `+directorNames+`
 		FROM watched w
 		JOIN films f ON f.id = w.film_id
 		ORDER BY w.watched_on DESC, f.name COLLATE NOCASE, f.id
@@ -109,11 +134,34 @@ func (s *Store) ListWatched(ctx context.Context, limit, offset int) ([]WatchedFi
 		if err != nil {
 			return nil, 0, err
 		}
-		// A JSON array, [] for a film without known director.
 		if err := json.Unmarshal([]byte(directors), &f.Directors); err != nil {
 			return nil, 0, err
 		}
 		films = append(films, f)
 	}
 	return films, total, rows.Err()
+}
+
+// Film returns the film with the given ID, or ErrNotFound.
+func (s *Store) Film(ctx context.Context, id int64) (Film, error) {
+	var f Film
+	var directors string
+	err := s.db.QueryRowContext(ctx, `
+		SELECT f.id, f.name, f.year, f.letterboxd_uri, w.watched_on,
+		       f.tmdb_id, f.overview, f.poster_path, f.runtime, `+directorNames+`
+		FROM films f
+		LEFT JOIN watched w ON w.film_id = f.id
+		WHERE f.id = ?`, id).
+		Scan(&f.ID, &f.Name, &f.Year, &f.LetterboxdURI, &f.WatchedOn,
+			&f.TMDBID, &f.Overview, &f.PosterPath, &f.Runtime, &directors)
+	if errors.Is(err, sql.ErrNoRows) {
+		return Film{}, ErrNotFound
+	}
+	if err != nil {
+		return Film{}, err
+	}
+	if err := json.Unmarshal([]byte(directors), &f.Directors); err != nil {
+		return Film{}, err
+	}
+	return f, nil
 }
