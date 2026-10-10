@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"sync"
 	"syscall"
 	"time"
 
@@ -17,6 +18,8 @@ import (
 	"codeberg.org/pfrappier/openboxd/backend/internal/database"
 	"codeberg.org/pfrappier/openboxd/backend/internal/imports"
 	"codeberg.org/pfrappier/openboxd/backend/internal/library"
+	"codeberg.org/pfrappier/openboxd/backend/internal/metadata"
+	"codeberg.org/pfrappier/openboxd/backend/internal/tmdb"
 )
 
 // Defaults suit regular API calls. Routes that need more time, like uploads,
@@ -29,6 +32,9 @@ const (
 
 	// How long in-flight requests get to finish once a stop signal arrives.
 	shutdownTimeout = 30 * time.Second
+
+	// Language of the texts fetched from TMDB, the one of the interface.
+	tmdbLanguage = "fr-FR"
 )
 
 func main() {
@@ -54,8 +60,23 @@ func run() error {
 	}
 	defer db.Close()
 
+	// Background work stops before the database closes.
+	var background sync.WaitGroup
+	defer func() {
+		stop()
+		background.Wait()
+	}()
+
 	store := library.NewStore(db)
-	importHandler := imports.NewHandler(filepath.Join(dataDir, "imports"), store)
+	filmsImported := func() {}
+	if key := envOr("TMDB_API_KEY", tmdb.DefaultAPIKey); key != "" {
+		enricher := metadata.NewEnricher(store, tmdb.New(key, tmdbLanguage))
+		background.Go(func() { enricher.Run(ctx) })
+		filmsImported = enricher.Wake
+	} else {
+		slog.Warn("no TMDB API key: films won't get a synopsis, poster or director")
+	}
+	importHandler := imports.NewHandler(filepath.Join(dataDir, "imports"), store, filmsImported)
 	libraryHandler := library.NewHandler(store)
 
 	r := chi.NewRouter()

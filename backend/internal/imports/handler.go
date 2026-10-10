@@ -39,14 +39,15 @@ const (
 var errInvalidExport = errors.New("expected a Letterboxd export: a .zip archive or the files of the unzipped folder")
 
 type Handler struct {
-	dir   string
-	store *library.Store
+	dir      string
+	store    *library.Store
+	imported func()
 }
 
 // NewHandler returns a handler that keeps uploaded exports under dir and
-// imports their content into store.
-func NewHandler(dir string, store *library.Store) *Handler {
-	return &Handler{dir: dir, store: store}
+// imports their content into store. It calls imported after each import.
+func NewHandler(dir string, store *library.Store, imported func()) *Handler {
+	return &Handler{dir: dir, store: store, imported: imported}
 }
 
 // Upload handles a multipart request whose "export" field holds either the
@@ -91,6 +92,7 @@ func (h *Handler) Upload(w http.ResponseWriter, r *http.Request) {
 		respond.Error(w, http.StatusInternalServerError, "could not import the export")
 		return
 	}
+	h.imported()
 
 	respond.JSON(w, http.StatusCreated, map[string]string{"id": id})
 }

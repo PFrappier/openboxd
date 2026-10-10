@@ -66,7 +66,7 @@ func newHandler(t *testing.T, dir string) (*Handler, *library.Store) {
 	}
 	t.Cleanup(func() { db.Close() })
 	store := library.NewStore(db)
-	return NewHandler(dir, store), store
+	return NewHandler(dir, store, func() {}), store
 }
 
 func serve(t *testing.T, req *http.Request) (*httptest.ResponseRecorder, string) {
