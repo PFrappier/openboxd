@@ -2,6 +2,8 @@ import { createRouter, createWebHistory } from 'vue-router'
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
+  // Going back or forward returns to where the page was left; anything else starts at the top.
+  scrollBehavior: (_to, _from, savedPosition) => savedPosition ?? { top: 0 },
   routes: [
     {
       path: '/onboarding',

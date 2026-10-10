@@ -1,15 +1,24 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { RouterLink } from 'vue-router'
+import { RouterLink, useRouter } from 'vue-router'
 import { ArrowLeft, CircleAlert, Clapperboard, ExternalLink, Heart } from '@lucide/vue'
 
 import FilmRating from '@/components/FilmRating.vue'
 import { Button } from '@/components/ui/button'
 import { ApiError } from '@/lib/api/client'
 import { getFilm, posterUrl, type Film } from '@/lib/api/films'
-import { formatDate } from '@/lib/dates'
 
 const props = defineProps<{ id: string }>()
+
+const router = useRouter()
+
+/** The page of the list the film was opened from, or else its first page. */
+const listLocation = computed(() => {
+  const previous = router.options.history.state.back
+  return typeof previous === 'string' && router.resolve(previous).name === 'films'
+    ? previous
+    : { name: 'films' }
+})
 
 const film = ref<Film | null>(null)
 const error = ref<string | null>(null)
@@ -51,7 +60,7 @@ const tmdbUrl = computed(() =>
 <template>
   <main class="mx-auto flex w-full max-w-6xl flex-col gap-8 px-4 py-10 sm:px-6">
     <RouterLink
-      :to="{ name: 'films' }"
+      :to="listLocation"
       class="flex items-center gap-1.5 self-start rounded-md text-sm text-muted-foreground transition-colors outline-none hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50"
     >
       <ArrowLeft class="size-4" />
@@ -116,18 +125,12 @@ const tmdbUrl = computed(() =>
         </header>
 
         <dl
-          v-if="runtime || film.watchedOn || film.rating !== null || film.liked"
+          v-if="runtime || film.rating !== null || film.liked"
           class="flex flex-wrap gap-x-10 gap-y-4 border-y py-4 text-sm"
         >
           <div v-if="runtime" class="space-y-0.5">
             <dt class="text-muted-foreground">Durée</dt>
             <dd class="font-medium">{{ runtime }}</dd>
-          </div>
-          <div v-if="film.watchedOn" class="space-y-0.5">
-            <dt class="text-muted-foreground">Vu le</dt>
-            <dd class="font-medium">
-              <time :datetime="film.watchedOn">{{ formatDate(film.watchedOn) }}</time>
-            </dd>
           </div>
           <div v-if="film.rating !== null" class="space-y-0.5">
             <dt class="text-muted-foreground">Note</dt>
