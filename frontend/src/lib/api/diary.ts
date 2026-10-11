@@ -12,6 +12,8 @@ export interface Viewing {
   rating: number | null
   /** Whether the film had been watched before. */
   rewatch: boolean
+  /** Whether the user wrote a review along with this viewing. */
+  reviewed: boolean
 }
 
 /** A viewing along with the film it is about. */

@@ -27,6 +27,9 @@ type WatchedFilm struct {
 	// for a film the user didn't rate.
 	Rating *float64 `json:"rating"`
 	Liked  bool     `json:"liked"`
+	// Reviewed tells whether the user wrote a review of the film; as Rating
+	// and Liked, it is only read from the library.
+	Reviewed bool `json:"reviewed"`
 
 	// The details below come from TMDB, not from the export: Import ignores
 	// them, and they are null until fetched or when TMDB lacks them.
@@ -63,6 +66,8 @@ type Film struct {
 
 	// Diary holds the viewings the user logged, latest first.
 	Diary []Viewing `json:"diary"`
+	// Reviews holds what the user wrote about the film, latest first.
+	Reviews []Review `json:"reviews"`
 }
 
 // RatedFilm is a film the user rated.
@@ -91,6 +96,7 @@ type Import struct {
 	Ratings []RatedFilm
 	Likes   []LikedFilm
 	Diary   []LoggedFilm
+	Reviews []ReviewedFilm
 	// Watchlist is added to the one of the library: a film that left the
 	// watchlist since an earlier import stays in it.
 	Watchlist []WatchlistFilm
@@ -99,11 +105,12 @@ type Import struct {
 	Lists []ImportedList
 }
 
-// rating and liked select the user's rating of film f in stars, null when it
-// isn't rated, and whether they liked it.
+// rating, liked and reviewed select the user's rating of film f in stars, null
+// when it isn't rated, whether they liked it and whether they reviewed it.
 const (
-	rating = `(SELECT half_stars / 2.0 FROM ratings WHERE film_id = f.id)`
-	liked  = `EXISTS (SELECT 1 FROM likes WHERE film_id = f.id)`
+	rating   = `(SELECT half_stars / 2.0 FROM ratings WHERE film_id = f.id)`
+	liked    = `EXISTS (SELECT 1 FROM likes WHERE film_id = f.id)`
+	reviewed = `EXISTS (SELECT 1 FROM reviews WHERE film_id = f.id)`
 )
 
 // directorNames selects the names of the directors of film f as a JSON array,
@@ -209,6 +216,22 @@ func (s *Store) Import(ctx context.Context, imp Import) error {
 			return err
 		}
 		_, err = upsertEntry.ExecContext(ctx, id, f.EntryURI, f.WatchedOn, nullIfZero(f.HalfStars), f.Rewatch)
+		if err != nil {
+			return err
+		}
+	}
+
+	upsertReviewStmt, err := tx.PrepareContext(ctx, upsertReview)
+	if err != nil {
+		return err
+	}
+	for _, f := range imp.Reviews {
+		id, err := filmID(f.LetterboxdURI, f.Name, f.Year)
+		if err != nil {
+			return err
+		}
+		_, err = upsertReviewStmt.ExecContext(ctx, id, f.ReviewURI, f.ReviewedOn, nullIfZero(f.WatchedOn),
+			nullIfZero(f.HalfStars), f.Rewatch, f.Text)
 		if err != nil {
 			return err
 		}
@@ -366,7 +389,7 @@ func (s *Store) ListWatched(ctx context.Context, filter WatchedFilter, sort Watc
 
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT f.id, f.name, f.year, f.letterboxd_uri, w.watched_on,
-		       `+rating+`, `+liked+`,
+		       `+rating+`, `+liked+`, `+reviewed+`,
 		       f.overview, f.poster_path, f.runtime, `+directorNames+`
 		FROM watched w
 		JOIN films f ON f.id = w.film_id
@@ -384,7 +407,7 @@ func (s *Store) ListWatched(ctx context.Context, filter WatchedFilter, sort Watc
 		var f WatchedFilm
 		var directors string
 		err := rows.Scan(&f.ID, &f.Name, &f.Year, &f.LetterboxdURI, &f.WatchedOn,
-			&f.Rating, &f.Liked, &f.Overview, &f.PosterPath, &f.Runtime, &directors)
+			&f.Rating, &f.Liked, &f.Reviewed, &f.Overview, &f.PosterPath, &f.Runtime, &directors)
 		if err != nil {
 			return nil, 0, err
 		}
@@ -419,6 +442,9 @@ func (s *Store) Film(ctx context.Context, id int64) (Film, error) {
 		return Film{}, err
 	}
 	if f.Diary, err = s.viewings(ctx, id); err != nil {
+		return Film{}, err
+	}
+	if f.Reviews, err = s.reviews(ctx, id); err != nil {
 		return Film{}, err
 	}
 	return f, nil

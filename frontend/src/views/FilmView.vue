@@ -4,6 +4,7 @@ import { RouterLink, useRouter } from 'vue-router'
 import { ArrowLeft, CircleAlert, Clapperboard, ExternalLink, Heart, Repeat2 } from '@lucide/vue'
 
 import FilmRating from '@/components/FilmRating.vue'
+import ReviewText from '@/components/ReviewText.vue'
 import { Button } from '@/components/ui/button'
 import { ApiError } from '@/lib/api/client'
 import { getFilm, posterUrl, type Film } from '@/lib/api/films'
@@ -17,6 +18,7 @@ const router = useRouter()
 const LISTS: Record<string, string> = {
   films: 'Films vus',
   diary: 'Journal',
+  reviews: 'Critiques',
   watchlist: 'Watchlist',
   list: 'Liste',
 }
@@ -188,6 +190,31 @@ const tmdbUrl = computed(() =>
                 <span class="sr-only">Revu</span>
               </template>
               <FilmRating v-if="viewing.rating !== null" :rating="viewing.rating" />
+            </li>
+          </ul>
+        </section>
+
+        <section v-if="film.reviews.length" class="space-y-2">
+          <h2 class="text-sm font-medium text-muted-foreground">
+            {{ film.reviews.length > 1 ? 'Critiques' : 'Critique' }}
+          </h2>
+          <ul class="divide-y rounded-xl border">
+            <li v-for="review in film.reviews" :key="review.id" class="space-y-2 px-4 py-3">
+              <p class="flex items-center gap-3 text-sm text-muted-foreground">
+                <!-- The day of the viewing it is about, or else the one it was written. -->
+                <time :datetime="review.watchedOn ?? review.reviewedOn" class="flex-1">
+                  {{ review.watchedOn ? 'Vu le' : 'Écrite le' }}
+                  {{ formatDate(review.watchedOn ?? review.reviewedOn) }}
+                </time>
+                <template v-if="review.rewatch">
+                  <Repeat2 class="size-4" />
+                  <span class="sr-only">Revu</span>
+                </template>
+                <span v-if="review.rating !== null" class="flex text-foreground">
+                  <FilmRating :rating="review.rating" />
+                </span>
+              </p>
+              <ReviewText :text="review.text" />
             </li>
           </ul>
         </section>

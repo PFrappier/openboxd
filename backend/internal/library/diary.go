@@ -30,6 +30,9 @@ type Viewing struct {
 	Rating *float64 `json:"rating"`
 	// Rewatch tells whether the film had been watched before.
 	Rewatch bool `json:"rewatch"`
+	// Reviewed tells whether the user wrote a review along with this viewing:
+	// reviews of the film written about another one, or none, don't count.
+	Reviewed bool `json:"reviewed"`
 }
 
 // DiaryEntry is a viewing along with the film it is about.
@@ -151,7 +154,7 @@ func (s *Store) ListDiary(ctx context.Context, filter DiaryFilter, sort DiarySor
 	}
 
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT e.id, e.watched_on, e.half_stars / 2.0, e.rewatch,
+		SELECT e.id, e.watched_on, e.half_stars / 2.0, e.rewatch, `+viewingReviewed+`,
 		       f.id, f.name, f.year, f.poster_path, `+liked+`
 		FROM diary_entries e
 		JOIN films f ON f.id = e.film_id
@@ -167,7 +170,7 @@ func (s *Store) ListDiary(ctx context.Context, filter DiaryFilter, sort DiarySor
 	entries := []DiaryEntry{}
 	for rows.Next() {
 		var e DiaryEntry
-		err := rows.Scan(&e.ID, &e.WatchedOn, &e.Rating, &e.Rewatch,
+		err := rows.Scan(&e.ID, &e.WatchedOn, &e.Rating, &e.Rewatch, &e.Reviewed,
 			&e.Film.ID, &e.Film.Name, &e.Film.Year, &e.Film.PosterPath, &e.Film.Liked)
 		if err != nil {
 			return nil, 0, err
@@ -203,10 +206,10 @@ func (s *Store) DiaryYears(ctx context.Context) ([]int, error) {
 // viewings returns the diary entries about a film, latest first.
 func (s *Store) viewings(ctx context.Context, filmID int64) ([]Viewing, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, watched_on, half_stars / 2.0, rewatch
-		FROM diary_entries
-		WHERE film_id = ?
-		ORDER BY watched_on DESC, id DESC`, filmID)
+		SELECT e.id, e.watched_on, e.half_stars / 2.0, e.rewatch, `+viewingReviewed+`
+		FROM diary_entries e
+		WHERE e.film_id = ?
+		ORDER BY e.watched_on DESC, e.id DESC`, filmID)
 	if err != nil {
 		return nil, err
 	}
@@ -216,13 +219,17 @@ func (s *Store) viewings(ctx context.Context, filmID int64) ([]Viewing, error) {
 	viewings := []Viewing{}
 	for rows.Next() {
 		var v Viewing
-		if err := rows.Scan(&v.ID, &v.WatchedOn, &v.Rating, &v.Rewatch); err != nil {
+		if err := rows.Scan(&v.ID, &v.WatchedOn, &v.Rating, &v.Rewatch, &v.Reviewed); err != nil {
 			return nil, err
 		}
 		viewings = append(viewings, v)
 	}
 	return viewings, rows.Err()
 }
+
+// viewingReviewed selects whether diary entry e has a review: Letterboxd gives
+// the review of a logged viewing the URI of its entry.
+const viewingReviewed = `EXISTS (SELECT 1 FROM reviews WHERE letterboxd_uri = e.letterboxd_uri)`
 
 // upsertDiaryEntry is the statement Import records a LoggedFilm with; its
 // arguments are the film ID, then the entry URI, the day, the half stars and

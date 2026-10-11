@@ -63,11 +63,11 @@ func TestDiary(t *testing.T) {
 
 	rec, _ := getDiary(t, store, "")
 	want := `{"total":3,"years":[2024],"entries":[` +
-		`{"id":3,"watchedOn":"2024-03-05","rating":4.5,"rewatch":true,` +
+		`{"id":3,"watchedOn":"2024-03-05","rating":4.5,"rewatch":true,"reviewed":false,` +
 		`"film":{"id":1,"name":"The Matrix","year":null,"posterPath":"/matrix.jpg","liked":true}},` +
-		`{"id":2,"watchedOn":"2024-03-05","rating":null,"rewatch":false,` +
+		`{"id":2,"watchedOn":"2024-03-05","rating":null,"rewatch":false,"reviewed":false,` +
 		`"film":{"id":2,"name":"Alien","year":null,"posterPath":null,"liked":false}},` +
-		`{"id":1,"watchedOn":"2024-01-02","rating":4,"rewatch":false,` +
+		`{"id":1,"watchedOn":"2024-01-02","rating":4,"rewatch":false,"reviewed":false,` +
 		`"film":{"id":1,"name":"The Matrix","year":null,"posterPath":"/matrix.jpg","liked":true}}]}` + "\n"
 	if rec.Body.String() != want {
 		t.Errorf("body = %s\nwant %s", rec.Body, want)

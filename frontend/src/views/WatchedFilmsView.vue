@@ -7,7 +7,16 @@ const lastShown: { url?: string; result?: WatchedFilmsPage } = {}
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
-import { ArrowUpDown, CircleAlert, Clapperboard, Download, Heart, SearchX, X } from '@lucide/vue'
+import {
+  ArrowUpDown,
+  CircleAlert,
+  Clapperboard,
+  Download,
+  Heart,
+  SearchX,
+  TextAlignStart,
+  X,
+} from '@lucide/vue'
 
 import FilmGrid from '@/components/FilmGrid.vue'
 import FilmRating from '@/components/FilmRating.vue'
@@ -202,9 +211,10 @@ watch([page, filter, sort], load, { immediate: true })
 
 const formatCount = (count: number) => count.toLocaleString('fr-FR')
 
-// Five stars and a heart are 6em and 14px of gaps wide: shrunk to fit the narrowest cards.
+// Five stars, a heart and the sign of a review are 7em and 20px of gaps wide: shrunk to
+// fit the narrowest cards.
 const ratingStyle = (cardWidth = 100) => ({
-  fontSize: `${Math.min(14, (cardWidth - 14) / 6)}px`,
+  fontSize: `${Math.min(14, (cardWidth - 20) / 7)}px`,
 })
 
 const emptyStateClass =
@@ -333,6 +343,10 @@ const emptyStateClass =
           <template v-if="film.liked">
             <Heart class="size-[1em] fill-current text-brand" />
             <span class="sr-only">Aimé</span>
+          </template>
+          <template v-if="film.reviewed">
+            <TextAlignStart class="size-[1em] text-muted-foreground" />
+            <span class="sr-only">Critiqué</span>
           </template>
         </div>
       </template>

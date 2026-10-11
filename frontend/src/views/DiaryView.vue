@@ -16,6 +16,7 @@ import {
   Heart,
   Repeat2,
   SearchX,
+  TextAlignStart,
   X,
 } from '@lucide/vue'
 
@@ -451,10 +452,20 @@ const emptyStateClass =
                   <span class="flex sm:w-[calc(5em+0.5rem)] sm:justify-end">
                     <FilmRating v-if="entry.rating !== null" :rating="entry.rating" />
                   </span>
-                  <span class="flex justify-center sm:w-[1em]">
+                  <!--
+                    These two share a slot as wide as both: one alone sits in its middle,
+                    halfway between the stars and the heart, rather than against either.
+                  -->
+                  <span
+                    class="flex items-center justify-center gap-2 sm:w-[calc(2em+0.625rem)] sm:gap-2.5"
+                  >
                     <template v-if="entry.rewatch">
                       <Repeat2 class="size-[1em] text-muted-foreground" />
                       <span class="sr-only">Revu</span>
+                    </template>
+                    <template v-if="entry.reviewed">
+                      <TextAlignStart class="size-[1em] text-muted-foreground" />
+                      <span class="sr-only">Critiqué</span>
                     </template>
                   </span>
                   <span class="flex justify-center sm:w-[1em]">

@@ -22,12 +22,13 @@ func (h *Handler) importExport(ctx context.Context, dir string) error {
 	defer closeExport()
 
 	var imp library.Import
-	// The diary is matched with films once the files that list them are read.
-	var diary []filmRow
+	// The diary and the reviews are matched with films once the files that
+	// list them are read.
+	var diary, reviews []filmRow
 	films := filmIndex{}
 	err = walkExport(export, func(name string, kind fileKind) error {
 		switch kind {
-		case watchedFile, ratingsFile, likedFilmsFile, diaryFile, watchlistFile:
+		case watchedFile, ratingsFile, likedFilmsFile, diaryFile, reviewsFile, watchlistFile:
 		case listFile:
 			list, ok, err := readList(export, name)
 			if ok {
@@ -44,6 +45,9 @@ func (h *Handler) importExport(ctx context.Context, dir string) error {
 		switch kind {
 		case diaryFile:
 			diary = append(diary, rows...)
+			return nil
+		case reviewsFile:
+			reviews = append(reviews, rows...)
 			return nil
 		case watchlistFile:
 			// Kept out of the index: the films of the diary are watched ones.
@@ -102,26 +106,45 @@ func (h *Handler) importExport(ctx context.Context, dir string) error {
 		entry.HalfStars, _ = parseRating(row.rating)
 		imp.Diary = append(imp.Diary, entry)
 	}
+	for _, row := range reviews {
+		// As for the diary, a review whose film can't be told is left out; so
+		// is one without a text.
+		filmURI, ok := films.uri(row)
+		if !ok || row.review == "" {
+			continue
+		}
+		review := library.ReviewedFilm{
+			Name: row.name, Year: row.year, LetterboxdURI: filmURI, ReviewURI: row.uri,
+			ReviewedOn: row.date, WatchedOn: row.watchedDate, Rewatch: row.rewatch, Text: row.review,
+		}
+		review.HalfStars, _ = parseRating(row.rating)
+		imp.Reviews = append(imp.Reviews, review)
+	}
 	return h.store.Import(ctx, imp)
 }
 
 // filmRow is a row of one of the files that list films: watched.csv,
-// ratings.csv, likes/films.csv, diary.csv and watchlist.csv share the columns
-// Date, Name, Year and Letterboxd URI.
+// ratings.csv, likes/films.csv, diary.csv, reviews.csv and watchlist.csv share
+// the columns Date, Name, Year and Letterboxd URI.
 type filmRow struct {
 	// date is the day of the action the file is about, e.g. rating the film.
 	date string
 	name string
 	// year is nil for films without a release year on Letterboxd.
 	year *int
-	// uri is the one of the film, except in diary.csv: the one of the entry.
+	// uri is the one of the film, except in diary.csv and reviews.csv: the
+	// one of the entry or of the review.
 	uri string
-	// rating is the Rating column, which ratings.csv and diary.csv have.
+	// rating is the Rating column, which ratings.csv, diary.csv and
+	// reviews.csv have.
 	rating string
 	// rewatch and watchedDate are the Rewatch and Watched Date columns of
-	// diary.csv, whose date is the day the viewing was logged.
+	// diary.csv and reviews.csv, whose date is the day the viewing was logged
+	// or the review written.
 	rewatch     bool
 	watchedDate string
+	// review is the Review column of reviews.csv.
+	review string
 }
 
 // filmIndex finds the URI of a film from its name and release year, the only
@@ -154,7 +177,7 @@ func (idx filmIndex) add(row filmRow) {
 	idx[key] = row.uri
 }
 
-// uri returns the URI of the film a diary row is about, unless no film or
+// uri returns the URI of the film a diary or reviews row is about, unless no film or
 // several ones have its name and year.
 func (idx filmIndex) uri(row filmRow) (string, bool) {
 	uri := idx[keyOf(row)]
@@ -177,6 +200,7 @@ func readFilmRows(export fs.FS, name string) ([]filmRow, error) {
 		column := columnsOf(header)
 		date, title, year, uri := column("Date"), column("Name"), column("Year"), column("Letterboxd URI")
 		rating, rewatch, watchedDate := column("Rating"), column("Rewatch"), column("Watched Date")
+		review := column("Review")
 
 		for {
 			row, err := r.Read()
@@ -191,7 +215,7 @@ func readFilmRows(export fs.FS, name string) ([]filmRow, error) {
 			}
 			film := filmRow{
 				date: date(row), name: title(row), uri: uri(row), rating: rating(row),
-				rewatch: rewatch(row) == "Yes", watchedDate: watchedDate(row),
+				rewatch: rewatch(row) == "Yes", watchedDate: watchedDate(row), review: review(row),
 			}
 			if y, err := strconv.Atoi(year(row)); err == nil {
 				film.year = &y

@@ -1,5 +1,6 @@
 import { toApiError } from './client'
 import type { Viewing } from './diary'
+import type { Review } from './reviews'
 
 export interface WatchedFilm {
   id: number
@@ -12,6 +13,8 @@ export interface WatchedFilm {
   /** In stars, from 0.5 to 5 by steps of 0.5; null for a film that isn't rated. */
   rating: number | null
   liked: boolean
+  /** Whether the user wrote a review of the film. */
+  reviewed: boolean
 
   // The details below come from TMDB: they are null until the server fetched
   // them, and when TMDB lacks them.
@@ -25,7 +28,7 @@ export interface WatchedFilm {
 }
 
 /** A film of the library, as returned by `GET /api/films/{id}`. */
-export interface Film extends Omit<WatchedFilm, 'watchedOn'> {
+export interface Film extends Omit<WatchedFilm, 'watchedOn' | 'reviewed'> {
   /** Null for a film that isn't marked as watched. */
   watchedOn: string | null
   /** Day the film was added to the watchlist, as YYYY-MM-DD; null for a film that isn't in it. */
@@ -34,6 +37,8 @@ export interface Film extends Omit<WatchedFilm, 'watchedOn'> {
   tmdbId: number | null
   /** The viewings logged in the diary, latest first. */
   diary: Viewing[]
+  /** What the user wrote about the film, latest first. */
+  reviews: Review[]
 }
 
 /** Widths TMDB serves posters in, among others. */

@@ -208,6 +208,61 @@ func TestUploadImportsDiary(t *testing.T) {
 	}
 }
 
+func TestUploadImportsReviews(t *testing.T) {
+	const reviewsHeader = "Date,Name,Year,Letterboxd URI,Rating,Rewatch,Review,Tags,Watched Date\n"
+	h, store := newHandler(t, t.TempDir())
+	export := map[string]string{
+		"watched.csv": watchedCSV,
+		// The URIs are the ones of the reviews, not of the films.
+		"reviews.csv": reviewsHeader +
+			"2024-01-05,Alien,1979,https://boxd.it/r1,4.5,,\"In space, \"\"no one\"\"\ncan hear you.\",horror,2024-01-01\n" +
+			// Written without logging a viewing, nor rating the film.
+			"2024-06-01,\"Monsters, Inc.\",2001,https://boxd.it/r2,,Yes,<i>Kitty!</i>,,\n" +
+			// Left out: no text, or no film has this name and year.
+			"2024-04-02,Alien,1979,https://boxd.it/r3,2,,,,2024-04-01\n" +
+			"2024-04-02,Never Watched,2000,https://boxd.it/r4,2,,Unknown.,,2024-04-01\n",
+		"deleted/reviews.csv": reviewsHeader + "2020-01-01,Alien,1979,https://boxd.it/r0,1,,Gone.,,2020-01-01\n",
+		// Reviews of others the user liked aren't theirs.
+		"likes/reviews.csv": "Date,Letterboxd URI\n2024-01-01,https://boxd.it/other\n",
+	}
+	// Importing twice doesn't duplicate the reviews.
+	for range 2 {
+		uploadOK(t, h, upload{"export.zip", zipExport(t, "", export)})
+	}
+
+	reviews, total, err := store.ListReviews(t.Context(), library.ReviewSortReviewedDesc, 100, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	type review struct {
+		film, reviewedOn, watchedOn, text string
+		rating                            float64 // 0 without rating
+		rewatch                           bool
+	}
+	want := []review{
+		{"Monsters, Inc.", "2024-06-01", "", "<i>Kitty!</i>", 0, true},
+		{"Alien", "2024-01-05", "2024-01-01", "In space, \"no one\"\ncan hear you.", 4.5, false},
+	}
+	if total != len(want) || len(reviews) != len(want) {
+		t.Fatalf("total = %d, %d reviews, want %d: %+v", total, len(reviews), len(want), reviews)
+	}
+	for i, r := range reviews {
+		got := review{film: r.Film.Name, reviewedOn: r.ReviewedOn, text: r.Text, rewatch: r.Rewatch}
+		if r.WatchedOn != nil {
+			got.watchedOn = *r.WatchedOn
+		}
+		if r.Rating != nil {
+			got.rating = *r.Rating
+		}
+		if got != want[i] {
+			t.Errorf("review %d = %+v, want %+v", i, got, want[i])
+		}
+	}
+	if films := listWatched(t, store); len(films) != 3 {
+		t.Errorf("got %d watched films, want 3: the reviews add none", len(films))
+	}
+}
+
 func TestUploadImportsWatchlist(t *testing.T) {
 	const header = "Date,Name,Year,Letterboxd URI\n"
 	h, store := newHandler(t, t.TempDir())

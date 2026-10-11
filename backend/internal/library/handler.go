@@ -105,6 +105,36 @@ func (h *Handler) Diary(w http.ResponseWriter, r *http.Request) {
 	}{total, years, entries})
 }
 
+// Reviews handles GET /api/reviews?limit=50&offset=0, which the optional sort
+// parameter orders: a ReviewSort, latest reviews first by default.
+func (h *Handler) Reviews(w http.ResponseWriter, r *http.Request) {
+	limit, offset, problem := page(r)
+	if problem != "" {
+		respond.Error(w, http.StatusBadRequest, problem)
+		return
+	}
+
+	sort := ReviewSortReviewedDesc
+	if raw := r.URL.Query().Get("sort"); raw != "" {
+		sort = ReviewSort(raw)
+	}
+	if !sort.Valid() {
+		respond.Error(w, http.StatusBadRequest, "sort is not a known order")
+		return
+	}
+
+	reviews, total, err := h.store.ListReviews(r.Context(), sort, limit, offset)
+	if err != nil {
+		slog.ErrorContext(r.Context(), "list reviews", "err", err)
+		respond.Error(w, http.StatusInternalServerError, "could not list reviews")
+		return
+	}
+	respond.JSON(w, http.StatusOK, struct {
+		Total   int           `json:"total"`
+		Reviews []ReviewEntry `json:"reviews"`
+	}{total, reviews})
+}
+
 // Watchlist handles GET /api/watchlist?limit=50&offset=0, which the optional
 // decade parameter narrows down to the films released in the ten years from
 // it, e.g. 1990, and the optional sort parameter orders: a WatchlistSort, most
