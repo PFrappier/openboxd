@@ -1,4 +1,5 @@
 import { toApiError } from './client'
+import type { Viewing } from './diary'
 
 export interface WatchedFilm {
   id: number
@@ -29,6 +30,8 @@ export interface Film extends Omit<WatchedFilm, 'watchedOn'> {
   watchedOn: string | null
   /** Null until the film is matched with TMDB, and when TMDB doesn't know it. */
   tmdbId: number | null
+  /** The viewings logged in the diary, latest first. */
+  diary: Viewing[]
 }
 
 /** Widths TMDB serves posters in, among others. */

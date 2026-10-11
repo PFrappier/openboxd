@@ -39,6 +39,11 @@ const router = createRouter({
           props: true,
         },
         {
+          path: 'journal',
+          name: 'diary',
+          component: () => import('@/views/DiaryView.vue'),
+        },
+        {
           path: 'a-propos',
           name: 'about',
           component: () => import('@/views/AboutView.vue'),

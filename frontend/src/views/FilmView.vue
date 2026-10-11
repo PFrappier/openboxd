@@ -1,23 +1,29 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { RouterLink, useRouter } from 'vue-router'
-import { ArrowLeft, CircleAlert, Clapperboard, ExternalLink, Heart } from '@lucide/vue'
+import { ArrowLeft, CircleAlert, Clapperboard, ExternalLink, Heart, Repeat2 } from '@lucide/vue'
 
 import FilmRating from '@/components/FilmRating.vue'
 import { Button } from '@/components/ui/button'
 import { ApiError } from '@/lib/api/client'
 import { getFilm, posterUrl, type Film } from '@/lib/api/films'
+import { formatDate } from '@/lib/dates'
 
 const props = defineProps<{ id: string }>()
 
 const router = useRouter()
 
-/** The page of the list the film was opened from, or else its first page. */
-const listLocation = computed(() => {
+// The lists that link to films, by the name of their route.
+const LISTS: Record<string, string> = { films: 'Films vus', diary: 'Journal' }
+
+/** The page of the list the film was opened from, or else the first page of the films. */
+const list = computed(() => {
   const previous = router.options.history.state.back
-  return typeof previous === 'string' && router.resolve(previous).name === 'films'
-    ? previous
-    : { name: 'films' }
+  const name = typeof previous === 'string' ? router.resolve(previous).name : undefined
+  const label = typeof name === 'string' ? LISTS[name] : undefined
+  return typeof previous === 'string' && label
+    ? { to: previous, label }
+    : { to: { name: 'films' }, label: 'Films vus' }
 })
 
 const film = ref<Film | null>(null)
@@ -60,11 +66,11 @@ const tmdbUrl = computed(() =>
 <template>
   <main class="mx-auto flex w-full max-w-6xl flex-col gap-8 px-4 py-10 sm:px-6">
     <RouterLink
-      :to="listLocation"
+      :to="list.to"
       class="flex items-center gap-1.5 self-start rounded-md text-sm text-muted-foreground transition-colors outline-none hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50"
     >
       <ArrowLeft class="size-4" />
-      Films vus
+      {{ list.label }}
     </RouterLink>
 
     <div v-if="error" role="alert" class="flex flex-col items-start gap-3">
@@ -152,6 +158,26 @@ const tmdbUrl = computed(() =>
           <h2 class="text-sm font-medium text-muted-foreground">Synopsis</h2>
           <p v-if="film.overview" class="leading-relaxed text-pretty">{{ film.overview }}</p>
           <p v-else class="text-muted-foreground">Aucun synopsis disponible pour ce film.</p>
+        </section>
+
+        <section v-if="film.diary.length" class="space-y-2">
+          <h2 class="text-sm font-medium text-muted-foreground">Journal</h2>
+          <ul class="divide-y rounded-xl border text-sm">
+            <li
+              v-for="viewing in film.diary"
+              :key="viewing.id"
+              class="flex items-center gap-3 px-4 py-2.5"
+            >
+              <time :datetime="viewing.watchedOn" class="flex-1">
+                {{ formatDate(viewing.watchedOn) }}
+              </time>
+              <template v-if="viewing.rewatch">
+                <Repeat2 class="size-4 text-muted-foreground" />
+                <span class="sr-only">Revu</span>
+              </template>
+              <FilmRating v-if="viewing.rating !== null" :rating="viewing.rating" />
+            </li>
+          </ul>
         </section>
 
         <div class="flex flex-wrap gap-2">

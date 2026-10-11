@@ -7,19 +7,10 @@ const lastShown: { url?: string; result?: WatchedFilmsPage } = {}
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, useTemplateRef, watch } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
-import {
-  ArrowUpDown,
-  ChevronLeft,
-  ChevronRight,
-  CircleAlert,
-  Clapperboard,
-  Download,
-  Heart,
-  SearchX,
-  X,
-} from '@lucide/vue'
+import { ArrowUpDown, CircleAlert, Clapperboard, Download, Heart, SearchX, X } from '@lucide/vue'
 
 import FilmRating from '@/components/FilmRating.vue'
+import ListPagination from '@/components/ListPagination.vue'
 import { Button } from '@/components/ui/button'
 import {
   Select,
@@ -41,6 +32,7 @@ import {
   type WatchedFilmsPage,
   type WatchedFilmsSort,
 } from '@/lib/api/films'
+import { RATINGS, ratingLabel } from '@/lib/ratings'
 
 // Splits into whole rows of 3, 5, 6, 10 or 15 films, see fitGrid.
 const PAGE_SIZE = 30
@@ -155,11 +147,6 @@ const NO_FILTER = 'all'
 /** The filter a select was set to, empty for none. */
 const selected = (value: unknown) => (typeof value === 'string' && value !== NO_FILTER ? value : '')
 
-const RATINGS = [5, 4.5, 4, 3.5, 3, 2.5, 2, 1.5, 1, 0.5]
-
-/** e.g. "★★★½". */
-const ratingLabel = (stars: number) => '★'.repeat(Math.floor(stars)) + (stars % 1 ? '½' : '')
-
 // From the current decade back to the one of the first films.
 const FIRST_DECADE = 1870
 const CURRENT_DECADE = Math.floor(new Date().getFullYear() / 10) * 10
@@ -179,30 +166,6 @@ if (lastShown.result && lastShown.url === route.fullPath) {
 }
 
 const pageCount = computed(() => Math.max(1, Math.ceil((total.value ?? 0) / PAGE_SIZE)))
-
-// Number of slots of the pagination when there are too many pages to link to them all.
-const PAGE_SLOTS = 7
-
-/**
- * Pages to link to: the first, the last and those around the current one; null is a gap.
- * There are as many slots on every page, so that the arrows stay where they are and can
- * be pressed again and again.
- */
-const pageLinks = computed<(number | null)[]>(() => {
-  const count = pageCount.value
-  const range = (from: number, length: number) => Array.from({ length }, (_, i) => from + i)
-  if (count <= PAGE_SLOTS) return range(1, count)
-  // Close to an end, the pages run up to it without a gap.
-  const run = PAGE_SLOTS - 2
-  if (page.value < run) return [...range(1, run), null, count]
-  if (page.value > count - run + 1) return [1, null, ...range(count - run + 1, run)]
-  return [1, null, page.value - 1, page.value, page.value + 1, null, count]
-})
-
-// Wide enough for the longest page number, so that all the slots are the same width.
-const pageSlotStyle = computed(() => ({
-  width: `calc(${formatCount(pageCount.value).length}ch + 1.25rem)`,
-}))
 
 // Only the answer to the latest request counts: pages can be changed faster than they load.
 let latestRequest = 0
@@ -541,54 +504,6 @@ const posterClass =
       <Button variant="outline" size="sm" @click="load">Réessayer</Button>
     </div>
 
-    <nav
-      v-if="pageCount > 1"
-      aria-label="Pagination"
-      class="flex flex-wrap items-center justify-center gap-1"
-    >
-      <Button v-if="page > 1" variant="ghost" size="icon-sm" as-child>
-        <RouterLink :to="pageLocation(page - 1)" aria-label="Page précédente">
-          <ChevronLeft />
-        </RouterLink>
-      </Button>
-      <Button v-else variant="ghost" size="icon-sm" disabled aria-label="Page précédente">
-        <ChevronLeft />
-      </Button>
-
-      <template v-for="(number, index) in pageLinks" :key="index">
-        <span
-          v-if="number === null"
-          class="text-center text-sm text-muted-foreground"
-          :style="pageSlotStyle"
-        >
-          …
-        </span>
-        <Button
-          v-else
-          :variant="number === page ? 'secondary' : 'ghost'"
-          size="sm"
-          class="px-0 tabular-nums"
-          :style="pageSlotStyle"
-          as-child
-        >
-          <RouterLink
-            :to="pageLocation(number)"
-            :aria-label="`Page ${number}`"
-            :aria-current="number === page ? 'page' : undefined"
-          >
-            {{ formatCount(number) }}
-          </RouterLink>
-        </Button>
-      </template>
-
-      <Button v-if="page < pageCount" variant="ghost" size="icon-sm" as-child>
-        <RouterLink :to="pageLocation(page + 1)" aria-label="Page suivante">
-          <ChevronRight />
-        </RouterLink>
-      </Button>
-      <Button v-else variant="ghost" size="icon-sm" disabled aria-label="Page suivante">
-        <ChevronRight />
-      </Button>
-    </nav>
+    <ListPagination :page="page" :page-count="pageCount" :to="pageLocation" />
   </main>
 </template>

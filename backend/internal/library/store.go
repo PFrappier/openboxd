@@ -57,6 +57,9 @@ type Film struct {
 	PosterPath *string  `json:"posterPath"`
 	Runtime    *int     `json:"runtime"`
 	Directors  []string `json:"directors"`
+
+	// Diary holds the viewings the user logged, latest first.
+	Diary []Viewing `json:"diary"`
 }
 
 // RatedFilm is a film the user rated.
@@ -84,6 +87,7 @@ type Import struct {
 	Watched []WatchedFilm
 	Ratings []RatedFilm
 	Likes   []LikedFilm
+	Diary   []LoggedFilm
 }
 
 // rating and liked select the user's rating of film f in stars, null when it
@@ -182,6 +186,21 @@ func (s *Store) Import(ctx context.Context, imp Import) error {
 			return err
 		}
 		if _, err := upsertLike.ExecContext(ctx, id, f.LikedOn); err != nil {
+			return err
+		}
+	}
+
+	upsertEntry, err := tx.PrepareContext(ctx, upsertDiaryEntry)
+	if err != nil {
+		return err
+	}
+	for _, f := range imp.Diary {
+		id, err := filmID(f.LetterboxdURI, f.Name, f.Year)
+		if err != nil {
+			return err
+		}
+		_, err = upsertEntry.ExecContext(ctx, id, f.EntryURI, f.WatchedOn, nullIfZero(f.HalfStars), f.Rewatch)
+		if err != nil {
 			return err
 		}
 	}
@@ -342,6 +361,9 @@ func (s *Store) Film(ctx context.Context, id int64) (Film, error) {
 		return Film{}, err
 	}
 	if err := json.Unmarshal([]byte(directors), &f.Directors); err != nil {
+		return Film{}, err
+	}
+	if f.Diary, err = s.viewings(ctx, id); err != nil {
 		return Film{}, err
 	}
 	return f, nil

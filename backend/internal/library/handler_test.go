@@ -286,7 +286,7 @@ func TestFilm(t *testing.T) {
 	rec := getFilm(store, "1")
 	want := `{"id":1,"name":"The Matrix","year":null,"letterboxdUri":"https://boxd.it/2a1m","watchedOn":"2024-01-02",` +
 		`"rating":null,"liked":false,` +
-		`"tmdbId":null,"overview":null,"posterPath":null,"runtime":null,"directors":[]}` + "\n"
+		`"tmdbId":null,"overview":null,"posterPath":null,"runtime":null,"directors":[],"diary":[]}` + "\n"
 	if rec.Code != http.StatusOK || rec.Body.String() != want {
 		t.Errorf("status = %d, body = %s\nwant %s", rec.Code, rec.Body, want)
 	}
@@ -305,7 +305,7 @@ func TestFilm(t *testing.T) {
 	want = `{"id":1,"name":"The Matrix","year":null,"letterboxdUri":"https://boxd.it/2a1m","watchedOn":"2024-01-02",` +
 		`"rating":null,"liked":false,` +
 		`"tmdbId":603,"overview":"Un pirate informatique découvre la Matrice.","posterPath":"/matrix.jpg","runtime":136,` +
-		`"directors":["Lilly Wachowski","Lana Wachowski"]}` + "\n"
+		`"directors":["Lilly Wachowski","Lana Wachowski"],"diary":[]}` + "\n"
 	if rec.Code != http.StatusOK || rec.Body.String() != want {
 		t.Errorf("status = %d, body = %s\nwant %s", rec.Code, rec.Body, want)
 	}
@@ -334,7 +334,7 @@ func TestFilmRatedAndLiked(t *testing.T) {
 	rec := getFilm(store, "1")
 	want := `{"id":1,"name":"The Matrix","year":null,"letterboxdUri":"https://boxd.it/2a1m","watchedOn":null,` +
 		`"rating":5,"liked":false,` +
-		`"tmdbId":null,"overview":null,"posterPath":null,"runtime":null,"directors":[]}` + "\n"
+		`"tmdbId":null,"overview":null,"posterPath":null,"runtime":null,"directors":[],"diary":[]}` + "\n"
 	if rec.Code != http.StatusOK || rec.Body.String() != want {
 		t.Errorf("status = %d, body = %s\nwant %s", rec.Code, rec.Body, want)
 	}
@@ -342,7 +342,7 @@ func TestFilmRatedAndLiked(t *testing.T) {
 	rec = getFilm(store, "2")
 	want = `{"id":2,"name":"Alien","year":null,"letterboxdUri":"https://boxd.it/2awY","watchedOn":null,` +
 		`"rating":null,"liked":true,` +
-		`"tmdbId":null,"overview":null,"posterPath":null,"runtime":null,"directors":[]}` + "\n"
+		`"tmdbId":null,"overview":null,"posterPath":null,"runtime":null,"directors":[],"diary":[]}` + "\n"
 	if rec.Code != http.StatusOK || rec.Body.String() != want {
 		t.Errorf("status = %d, body = %s\nwant %s", rec.Code, rec.Body, want)
 	}

@@ -147,3 +147,63 @@ func TestParseRating(t *testing.T) {
 		}
 	}
 }
+
+func TestUploadImportsDiary(t *testing.T) {
+	const diaryHeader = "Date,Name,Year,Letterboxd URI,Rating,Rewatch,Tags,Watched Date\n"
+	h, store := newHandler(t, t.TempDir())
+	export := map[string]string{
+		"watched.csv": watchedCSV +
+			// Two films that only their URI tells apart.
+			"2024-04-01,Twins,1990,https://boxd.it/tw1\n" +
+			"2024-04-01,Twins,1990,https://boxd.it/tw2\n",
+		// The URIs are the ones of the entries, not of the films.
+		"diary.csv": diaryHeader +
+			"2024-01-05,Alien,1979,https://boxd.it/e1,4.5,,,2024-01-01\n" +
+			"2024-06-01,Alien,1979,https://boxd.it/e2,,Yes,\"horror, space\",2024-05-30\n" +
+			// Without a watched date, the day it was logged stands for it.
+			"2024-02-10,Untitled Project,,https://boxd.it/e3,3,,,\n" +
+			// Left out: no film or several ones have this name and year.
+			"2024-04-02,Twins,1990,https://boxd.it/e4,2,,,2024-04-01\n" +
+			"2024-04-02,Alien,1980,https://boxd.it/e5,2,,,2024-04-01\n" +
+			"2024-04-02,Never Watched,2000,https://boxd.it/e6,2,,,2024-04-01\n",
+		"deleted/diary.csv": diaryHeader + "2020-01-01,Alien,1979,https://boxd.it/e0,1,,,2020-01-01\n",
+	}
+	// Importing twice doesn't duplicate the entries.
+	for range 2 {
+		uploadOK(t, h, upload{"export.zip", zipExport(t, "", export)})
+	}
+
+	entries, total, err := store.ListDiary(t.Context(), library.DiaryFilter{}, library.DiarySortWatchedDesc, 100, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	type entry struct {
+		film, watchedOn string
+		rating          float64 // 0 without rating
+		rewatch         bool
+	}
+	want := []entry{
+		{"Alien", "2024-05-30", 0, true},
+		{"Untitled Project", "2024-02-10", 3, false},
+		{"Alien", "2024-01-01", 4.5, false},
+	}
+	if total != len(want) || len(entries) != len(want) {
+		t.Fatalf("total = %d, %d entries, want %d: %+v", total, len(entries), len(want), entries)
+	}
+	for i, e := range entries {
+		got := entry{film: e.Film.Name, watchedOn: e.WatchedOn, rewatch: e.Rewatch}
+		if e.Rating != nil {
+			got.rating = *e.Rating
+		}
+		if got != want[i] {
+			t.Errorf("entry %d = %+v, want %+v", i, got, want[i])
+		}
+	}
+	// Both viewings of Alien are about the film of watched.csv.
+	if entries[0].Film.ID != entries[2].Film.ID {
+		t.Errorf("the viewings of Alien are about films %d and %d", entries[0].Film.ID, entries[2].Film.ID)
+	}
+	if films := listWatched(t, store); len(films) != 5 {
+		t.Errorf("got %d watched films, want 5: the diary adds none", len(films))
+	}
+}

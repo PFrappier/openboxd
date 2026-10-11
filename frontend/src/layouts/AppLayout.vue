@@ -9,7 +9,7 @@ import logo from '@/assets/logo-dark.png'
 // Tabs without a `to` are placeholders for pages that don't exist yet.
 const navigation: { label: string; to?: RouteLocationRaw }[] = [
   { label: 'Films', to: { name: 'films' } },
-  { label: 'Journal' },
+  { label: 'Journal', to: { name: 'diary' } },
   { label: 'Watchlist' },
   { label: 'Listes' },
 ]
