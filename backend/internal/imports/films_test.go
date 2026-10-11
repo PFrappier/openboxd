@@ -255,3 +255,68 @@ func TestUploadImportsWatchlist(t *testing.T) {
 		t.Errorf("diary entries = %+v, want one about the watched Alien", entries)
 	}
 }
+
+func TestUploadImportsLists(t *testing.T) {
+	h, store := newHandler(t, t.TempDir())
+	export := map[string]string{
+		"watched.csv": watchedCSV,
+		// As Letterboxd writes them: CRLF line ends, a blank line between the tables.
+		"lists/top-sci-fi.csv": "Letterboxd list export v7\r\n" +
+			"Date,Name,Tags,URL,Description\r\n" +
+			"2025-09-03,\"Top, sci-fi\",space,https://boxd.it/top,\"Ranked.\nFor now.\"\r\n" +
+			"\r\n" +
+			"Position,Name,Year,URL,Description\r\n" +
+			"1,Heat,1995,https://boxd.it/2bfM,\r\n" +
+			"2,Alien,1979,https://boxd.it/2awY,The first one\r\n" +
+			"3,Untitled Sequel,,https://boxd.it/yyyy,\r\n" +
+			"4,No URI,2000,,\r\n",
+		"lists/empty.csv": "Letterboxd list export v7\nDate,Name,Tags,URL,Description\n" +
+			"2025-10-01,Empty,,https://boxd.it/empty,\n\nPosition,Name,Year,URL,Description\n",
+		// Can't be told apart from another list without its URI.
+		"lists/no-uri.csv":      "Letterboxd list export v7\nDate,Name\n2024-01-01,Nameless\n\nPosition,Name\n1,Alien\n",
+		"lists/truncated.csv":   "Letterboxd list export v7\n",
+		"deleted/lists/old.csv": "Letterboxd list export v7\nDate,Name,Tags,URL,Description\n2020-01-01,Old,,https://boxd.it/old,\n",
+	}
+	// Importing twice doesn't duplicate the lists.
+	for range 2 {
+		uploadOK(t, h, upload{"export.zip", zipExport(t, "", export)})
+	}
+
+	lists, total, err := store.ListLists(t.Context(), library.ListSortCreatedDesc, 100, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if total != 2 || len(lists) != 2 {
+		t.Fatalf("total = %d, %d lists, want 2: %+v", total, len(lists), lists)
+	}
+	if empty := lists[0]; empty.Name != "Empty" || empty.FilmCount != 0 {
+		t.Errorf("first list = %+v", empty)
+	}
+	top := lists[1]
+	if top.Name != "Top, sci-fi" || top.LetterboxdURI != "https://boxd.it/top" || top.CreatedOn != "2025-09-03" ||
+		top.Description != "Ranked.\nFor now." || top.FilmCount != 3 {
+		t.Errorf("second list = %+v", top)
+	}
+
+	films, err := store.ListFilms(t.Context(), top.ID, 100, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(films) != 3 {
+		t.Fatalf("got %d films, want 3: %+v", len(films), films)
+	}
+	if heat := films[0]; heat.Name != "Heat" || heat.Position != 1 || heat.Year == nil || *heat.Year != 1995 {
+		t.Errorf("first film = %+v", heat)
+	}
+	if untitled := films[2]; untitled.Name != "Untitled Sequel" || untitled.Position != 3 || untitled.Year != nil {
+		t.Errorf("film without year = %+v", untitled)
+	}
+	// The film of the list is the watched one: they share their URI.
+	watched := listWatched(t, store)
+	if len(watched) != 3 {
+		t.Errorf("got %d watched films, want 3: the lists add none", len(watched))
+	}
+	if alien := films[1]; alien.ID != watched[2].ID {
+		t.Errorf("Alien of the list = %+v, want the watched film %+v", alien, watched[2])
+	}
+}

@@ -144,6 +144,71 @@ func (h *Handler) Watchlist(w http.ResponseWriter, r *http.Request) {
 	}{total, films})
 }
 
+// Lists handles GET /api/lists?limit=50&offset=0, which the optional sort
+// parameter orders: a ListSort, most recently made first by default.
+func (h *Handler) Lists(w http.ResponseWriter, r *http.Request) {
+	limit, offset, problem := page(r)
+	if problem != "" {
+		respond.Error(w, http.StatusBadRequest, problem)
+		return
+	}
+
+	sort := ListSortCreatedDesc
+	if raw := r.URL.Query().Get("sort"); raw != "" {
+		sort = ListSort(raw)
+	}
+	if !sort.Valid() {
+		respond.Error(w, http.StatusBadRequest, "sort is not a known order")
+		return
+	}
+
+	lists, total, err := h.store.ListLists(r.Context(), sort, limit, offset)
+	if err != nil {
+		slog.ErrorContext(r.Context(), "list lists", "err", err)
+		respond.Error(w, http.StatusInternalServerError, "could not list the lists")
+		return
+	}
+	respond.JSON(w, http.StatusOK, struct {
+		Total int    `json:"total"`
+		Lists []List `json:"lists"`
+	}{total, lists})
+}
+
+// List handles GET /api/lists/{id}?limit=50&offset=0: the list along with a
+// page of its films, in the order of the list.
+func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
+	// An ID that isn't a number can't be the one of a list.
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		respond.Error(w, http.StatusNotFound, "list not found")
+		return
+	}
+	limit, offset, problem := page(r)
+	if problem != "" {
+		respond.Error(w, http.StatusBadRequest, problem)
+		return
+	}
+
+	list, err := h.store.List(r.Context(), id)
+	if errors.Is(err, ErrListNotFound) {
+		respond.Error(w, http.StatusNotFound, "list not found")
+		return
+	}
+	var films []ListFilm
+	if err == nil {
+		films, err = h.store.ListFilms(r.Context(), id, limit, offset)
+	}
+	if err != nil {
+		slog.ErrorContext(r.Context(), "get list", "err", err)
+		respond.Error(w, http.StatusInternalServerError, "could not get the list")
+		return
+	}
+	respond.JSON(w, http.StatusOK, struct {
+		List  List       `json:"list"`
+		Films []ListFilm `json:"films"`
+	}{list, films})
+}
+
 // Film handles GET /api/films/{id}.
 func (h *Handler) Film(w http.ResponseWriter, r *http.Request) {
 	// An ID that isn't a number can't be the one of a film.

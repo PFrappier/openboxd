@@ -3,11 +3,13 @@
   lang="ts"
   generic="T extends { id: number; name: string; year: number | null; posterPath: string | null }"
 >
-import { computed, onBeforeUnmount, onMounted, ref, useTemplateRef } from 'vue'
+import { computed, useTemplateRef } from 'vue'
 import { RouterLink } from 'vue-router'
 import { Clapperboard } from '@lucide/vue'
 
 import { posterUrl } from '@/lib/api/films'
+import { filmGridHeight, fitFilmGrid } from '@/lib/film-grid'
+import { useFittedLayout } from '@/lib/fitted-layout'
 
 const props = defineProps<{
   films: T[]
@@ -24,107 +26,17 @@ const slots = defineSlots<{
   footer?(props: { film: T; cardWidth: number | undefined }): unknown
 }>()
 
-// In pixels: the gap of the grid, what a card adds under its poster for its footer,
-// and the width under which posters get too small to be told apart.
-const GRID_GAP = 12
-const CARD_FOOTER = 22
-const MIN_CARD_WIDTH = 64
-
-interface GridLayout {
-  columns: number
-  /** Width of a card, in pixels. */
-  cardWidth: number
-  /** Height a row is given, in pixels: the one of a card with a footer. */
-  rowHeight: number
-}
-
-/**
- * Lays a full page of films out in whole rows, with the largest cards that fit both the
- * width and the height given. When the space is too small for that, the height gives in:
- * the cards keep a decent size and the page scrolls.
- *
- * Cards are fitted as if they had a footer even when they have none: every list of films
- * is then as tall, and what sits under the grid doesn't move from one to the other.
- * Posters without a footer grow into its room where the width allows it.
- */
-function fitGrid(width: number, height: number): GridLayout {
-  const widthFor = (columns: number) => (width - GRID_GAP * (columns - 1)) / columns
-  const heightFor = (columns: number) => {
-    const rows = props.pageSize / columns
-    return (height - GRID_GAP * (rows - 1)) / rows
-  }
-  const candidates: number[] = []
-  for (let columns = 1; columns <= props.pageSize; columns++) {
-    if (props.pageSize % columns === 0) candidates.push(columns)
-  }
-  const layouts = candidates.map((columns) => ({
-    columns,
-    // Posters are 2:3.
-    cardWidth: Math.floor(
-      Math.min(widthFor(columns), ((heightFor(columns) - CARD_FOOTER) * 2) / 3),
-    ),
-  }))
-  let fitted = layouts.reduce((a, b) => (b.cardWidth > a.cardWidth ? b : a))
-  if (fitted.cardWidth < MIN_CARD_WIDTH) {
-    // The most columns the width allows make for the shortest scroll.
-    const columns = Math.max(1, ...candidates.filter((c) => widthFor(c) >= MIN_CARD_WIDTH))
-    fitted = { columns, cardWidth: Math.floor(widthFor(columns)) }
-  }
-
-  const { columns } = fitted
-  const rowHeight = fitted.cardWidth * 1.5 + CARD_FOOTER
-  if (slots.footer) return { ...fitted, rowHeight }
-  const cardWidth = Math.floor(Math.min(widthFor(columns), (rowHeight * 2) / 3))
-  return { columns, cardWidth, rowHeight }
-}
-
-const gridArea = useTemplateRef('gridArea')
-// The page the grid is part of: its <main>, which holds what sits above and under it.
-let pageElement: HTMLElement | null = null
-const layout = ref<GridLayout | null>(null)
-
-function updateLayout() {
-  if (!pageElement || !gridArea.value) return
-  const pageBox = pageElement.getBoundingClientRect()
-  const areaBox = gridArea.value.getBoundingClientRect()
-  // What the screen leaves to the grid once everything above and under it is counted:
-  // the top bar and the title above, the pagination under.
-  const above = areaBox.top + window.scrollY
-  const under = pageBox.bottom - areaBox.bottom
-  const fitted = fitGrid(gridArea.value.clientWidth, window.innerHeight - above - under)
-  if (
-    fitted.columns !== layout.value?.columns ||
-    fitted.cardWidth !== layout.value.cardWidth ||
-    fitted.rowHeight !== layout.value.rowHeight
-  ) {
-    layout.value = fitted
-  }
-}
-
-// Also covers what changes the space left without resizing the window, such as the
-// pagination showing up once the number of films is known.
-const pageObserver = new ResizeObserver(updateLayout)
-
-onMounted(() => {
-  pageElement = gridArea.value?.closest('main') ?? null
-  updateLayout()
-  if (pageElement) pageObserver.observe(pageElement)
-  window.addEventListener('resize', updateLayout)
-})
-
-onBeforeUnmount(() => {
-  pageObserver.disconnect()
-  window.removeEventListener('resize', updateLayout)
-})
+const layout = useFittedLayout(useTemplateRef('gridArea'), (width, height) =>
+  fitFilmGrid(width, height, props.pageSize, Boolean(slots.footer)),
+)
 
 const gridStyle = computed(() => {
   if (!layout.value) return undefined
-  const { columns, cardWidth, rowHeight } = layout.value
-  const rows = props.pageSize / columns
+  const { columns, cardWidth } = layout.value
   return {
     gridTemplateColumns: `repeat(${columns}, ${cardWidth}px)`,
     // As tall as a full page even when the last one isn't, so that the pagination stays put.
-    minHeight: `${rows * rowHeight + (rows - 1) * GRID_GAP}px`,
+    minHeight: `${filmGridHeight(layout.value, props.pageSize)}px`,
   }
 })
 

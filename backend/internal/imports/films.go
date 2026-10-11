@@ -28,6 +28,12 @@ func (h *Handler) importExport(ctx context.Context, dir string) error {
 	err = walkExport(export, func(name string, kind fileKind) error {
 		switch kind {
 		case watchedFile, ratingsFile, likedFilmsFile, diaryFile, watchlistFile:
+		case listFile:
+			list, ok, err := readList(export, name)
+			if ok {
+				imp.Lists = append(imp.Lists, list)
+			}
+			return err
 		default:
 			return nil
 		}
@@ -168,15 +174,7 @@ func readFilmRows(export fs.FS, name string) ([]filmRow, error) {
 			return err
 		}
 		header[0] = strings.TrimPrefix(header[0], "\ufeff")
-		column := func(title string) func(row []string) string {
-			i := slices.Index(header, title)
-			return func(row []string) string {
-				if i < 0 || i >= len(row) {
-					return ""
-				}
-				return strings.TrimSpace(row[i])
-			}
-		}
+		column := columnsOf(header)
 		date, title, year, uri := column("Date"), column("Name"), column("Year"), column("Letterboxd URI")
 		rating, rewatch, watchedDate := column("Rating"), column("Rewatch"), column("Watched Date")
 
@@ -202,6 +200,21 @@ func readFilmRows(export fs.FS, name string) ([]filmRow, error) {
 		}
 	})
 	return films, err
+}
+
+// columnsOf returns what gives, from the title of a column of header, what
+// reads that column in a row; a column the file lacks reads as empty. The
+// header isn't kept: it can be overwritten once the columns are known.
+func columnsOf(header []string) func(title string) func(row []string) string {
+	return func(title string) func(row []string) string {
+		i := slices.Index(header, title)
+		return func(row []string) string {
+			if i < 0 || i >= len(row) {
+				return ""
+			}
+			return strings.TrimSpace(row[i])
+		}
+	}
 }
 
 // parseRating converts a Letterboxd rating, from "0.5" to "5" stars, to half

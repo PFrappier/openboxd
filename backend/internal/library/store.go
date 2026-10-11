@@ -94,6 +94,9 @@ type Import struct {
 	// Watchlist is added to the one of the library: a film that left the
 	// watchlist since an earlier import stays in it.
 	Watchlist []WatchlistFilm
+	// Lists replace the ones the library knows by their URI, films included;
+	// a list deleted since an earlier import stays in the library.
+	Lists []ImportedList
 }
 
 // rating and liked select the user's rating of film f in stars, null when it
@@ -222,6 +225,38 @@ func (s *Store) Import(ctx context.Context, imp Import) error {
 		}
 		if _, err := upsertWatchlist.ExecContext(ctx, id, f.AddedOn); err != nil {
 			return err
+		}
+	}
+
+	upsertListStmt, err := tx.PrepareContext(ctx, upsertList)
+	if err != nil {
+		return err
+	}
+	clearListStmt, err := tx.PrepareContext(ctx, clearList)
+	if err != nil {
+		return err
+	}
+	insertListFilmStmt, err := tx.PrepareContext(ctx, insertListFilm)
+	if err != nil {
+		return err
+	}
+	for _, l := range imp.Lists {
+		var listID int64
+		err := upsertListStmt.QueryRowContext(ctx, l.LetterboxdURI, l.Name, l.Description, l.CreatedOn).Scan(&listID)
+		if err != nil {
+			return err
+		}
+		if _, err := clearListStmt.ExecContext(ctx, listID); err != nil {
+			return err
+		}
+		for i, f := range l.Films {
+			id, err := filmID(f.LetterboxdURI, f.Name, f.Year)
+			if err != nil {
+				return err
+			}
+			if _, err := insertListFilmStmt.ExecContext(ctx, listID, id, i+1); err != nil {
+				return err
+			}
 		}
 	}
 	return tx.Commit()

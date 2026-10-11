@@ -90,6 +90,8 @@ func run() error {
 		r.Get("/watched", libraryHandler.Watched)
 		r.Get("/diary", libraryHandler.Diary)
 		r.Get("/watchlist", libraryHandler.Watchlist)
+		r.Get("/lists", libraryHandler.Lists)
+		r.Get("/lists/{id}", libraryHandler.List)
 		r.Get("/films/{id}", libraryHandler.Film)
 	})
 

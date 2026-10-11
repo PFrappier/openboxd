@@ -11,7 +11,7 @@ const navigation: { label: string; to?: RouteLocationRaw }[] = [
   { label: 'Films', to: { name: 'films' } },
   { label: 'Journal', to: { name: 'diary' } },
   { label: 'Watchlist', to: { name: 'watchlist' } },
-  { label: 'Listes' },
+  { label: 'Listes', to: { name: 'lists' } },
 ]
 
 const tabClass =

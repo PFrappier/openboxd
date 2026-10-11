@@ -18,6 +18,7 @@ const LISTS: Record<string, string> = {
   films: 'Films vus',
   diary: 'Journal',
   watchlist: 'Watchlist',
+  list: 'Liste',
 }
 
 /** The page of the list the film was opened from, or else the first page of the films. */
