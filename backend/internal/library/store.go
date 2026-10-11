@@ -50,6 +50,9 @@ type Film struct {
 	// Rating is in stars, from 0.5 to 5, and null for a film the user didn't rate.
 	Rating *float64 `json:"rating"`
 	Liked  bool     `json:"liked"`
+	// WatchlistedOn is the day the film was added to the watchlist
+	// (YYYY-MM-DD), null for a film that isn't in it.
+	WatchlistedOn *string `json:"watchlistedOn"`
 
 	// The details below come from TMDB, as in WatchedFilm.
 	TMDBID     *int64   `json:"tmdbId"`
@@ -88,6 +91,9 @@ type Import struct {
 	Ratings []RatedFilm
 	Likes   []LikedFilm
 	Diary   []LoggedFilm
+	// Watchlist is added to the one of the library: a film that left the
+	// watchlist since an earlier import stays in it.
+	Watchlist []WatchlistFilm
 }
 
 // rating and liked select the user's rating of film f in stars, null when it
@@ -201,6 +207,20 @@ func (s *Store) Import(ctx context.Context, imp Import) error {
 		}
 		_, err = upsertEntry.ExecContext(ctx, id, f.EntryURI, f.WatchedOn, nullIfZero(f.HalfStars), f.Rewatch)
 		if err != nil {
+			return err
+		}
+	}
+
+	upsertWatchlist, err := tx.PrepareContext(ctx, upsertWatchlistFilm)
+	if err != nil {
+		return err
+	}
+	for _, f := range imp.Watchlist {
+		id, err := filmID(f.LetterboxdURI, f.Name, f.Year)
+		if err != nil {
+			return err
+		}
+		if _, err := upsertWatchlist.ExecContext(ctx, id, f.AddedOn); err != nil {
 			return err
 		}
 	}
@@ -347,13 +367,13 @@ func (s *Store) Film(ctx context.Context, id int64) (Film, error) {
 	var directors string
 	err := s.db.QueryRowContext(ctx, `
 		SELECT f.id, f.name, f.year, f.letterboxd_uri, w.watched_on,
-		       `+rating+`, `+liked+`,
+		       `+rating+`, `+liked+`, (SELECT added_on FROM watchlist WHERE film_id = f.id),
 		       f.tmdb_id, f.overview, f.poster_path, f.runtime, `+directorNames+`
 		FROM films f
 		LEFT JOIN watched w ON w.film_id = f.id
 		WHERE f.id = ?`, id).
 		Scan(&f.ID, &f.Name, &f.Year, &f.LetterboxdURI, &f.WatchedOn,
-			&f.Rating, &f.Liked, &f.TMDBID, &f.Overview, &f.PosterPath, &f.Runtime, &directors)
+			&f.Rating, &f.Liked, &f.WatchlistedOn, &f.TMDBID, &f.Overview, &f.PosterPath, &f.Runtime, &directors)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Film{}, ErrNotFound
 	}

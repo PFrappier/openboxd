@@ -14,7 +14,11 @@ const props = defineProps<{ id: string }>()
 const router = useRouter()
 
 // The lists that link to films, by the name of their route.
-const LISTS: Record<string, string> = { films: 'Films vus', diary: 'Journal' }
+const LISTS: Record<string, string> = {
+  films: 'Films vus',
+  diary: 'Journal',
+  watchlist: 'Watchlist',
+}
 
 /** The page of the list the film was opened from, or else the first page of the films. */
 const list = computed(() => {
@@ -131,7 +135,7 @@ const tmdbUrl = computed(() =>
         </header>
 
         <dl
-          v-if="runtime || film.rating !== null || film.liked"
+          v-if="runtime || film.rating !== null || film.liked || film.watchlistedOn"
           class="flex flex-wrap gap-x-10 gap-y-4 border-y py-4 text-sm"
         >
           <div v-if="runtime" class="space-y-0.5">
@@ -150,6 +154,13 @@ const tmdbUrl = computed(() =>
             <dd class="flex h-5 items-center">
               <Heart class="size-4 fill-current text-brand" />
               <span class="sr-only">Oui</span>
+            </dd>
+          </div>
+          <div v-if="film.watchlistedOn" class="space-y-0.5">
+            <dt class="text-muted-foreground">Watchlist</dt>
+            <dd class="font-medium">
+              Ajouté le
+              <time :datetime="film.watchlistedOn">{{ formatDate(film.watchlistedOn) }}</time>
             </dd>
           </div>
         </dl>

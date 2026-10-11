@@ -28,6 +28,8 @@ export interface WatchedFilm {
 export interface Film extends Omit<WatchedFilm, 'watchedOn'> {
   /** Null for a film that isn't marked as watched. */
   watchedOn: string | null
+  /** Day the film was added to the watchlist, as YYYY-MM-DD; null for a film that isn't in it. */
+  watchlistedOn: string | null
   /** Null until the film is matched with TMDB, and when TMDB doesn't know it. */
   tmdbId: number | null
   /** The viewings logged in the diary, latest first. */

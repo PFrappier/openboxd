@@ -105,6 +105,45 @@ func (h *Handler) Diary(w http.ResponseWriter, r *http.Request) {
 	}{total, years, entries})
 }
 
+// Watchlist handles GET /api/watchlist?limit=50&offset=0, which the optional
+// decade parameter narrows down to the films released in the ten years from
+// it, e.g. 1990, and the optional sort parameter orders: a WatchlistSort, most
+// recently added first by default.
+func (h *Handler) Watchlist(w http.ResponseWriter, r *http.Request) {
+	limit, offset, problem := page(r)
+	if problem != "" {
+		respond.Error(w, http.StatusBadRequest, problem)
+		return
+	}
+
+	var filter WatchlistFilter
+	var ok bool
+	if filter.Decade, ok = decadeParam(r.URL.Query().Get("decade")); !ok {
+		respond.Error(w, http.StatusBadRequest, problemDecade)
+		return
+	}
+
+	sort := WatchlistSortAddedDesc
+	if raw := r.URL.Query().Get("sort"); raw != "" {
+		sort = WatchlistSort(raw)
+	}
+	if !sort.Valid() {
+		respond.Error(w, http.StatusBadRequest, "sort is not a known order")
+		return
+	}
+
+	films, total, err := h.store.ListWatchlist(r.Context(), filter, sort, limit, offset)
+	if err != nil {
+		slog.ErrorContext(r.Context(), "list watchlist", "err", err)
+		respond.Error(w, http.StatusInternalServerError, "could not list the watchlist")
+		return
+	}
+	respond.JSON(w, http.StatusOK, struct {
+		Total int             `json:"total"`
+		Films []WatchlistFilm `json:"films"`
+	}{total, films})
+}
+
 // Film handles GET /api/films/{id}.
 func (h *Handler) Film(w http.ResponseWriter, r *http.Request) {
 	// An ID that isn't a number can't be the one of a film.
@@ -143,12 +182,8 @@ func watchedFilter(r *http.Request) (filter WatchedFilter, problem string) {
 		return filter, `liked must be "true"`
 	}
 
-	if raw := query.Get("decade"); raw != "" {
-		decade, err := strconv.Atoi(raw)
-		if err != nil || decade%10 != 0 {
-			return filter, "decade must be the first year of a decade"
-		}
-		filter.Decade = &decade
+	if filter.Decade, ok = decadeParam(query.Get("decade")); !ok {
+		return filter, problemDecade
 	}
 	return filter, ""
 }
@@ -202,6 +237,21 @@ func ratingParam(raw string) (halfStars *int, unrated, ok bool) {
 		return nil, false, false
 	}
 	return &n, false, true
+}
+
+const problemDecade = "decade must be the first year of a decade"
+
+// decadeParam reads a decade to filter by: its first year, e.g. 1990. An
+// empty one filters nothing.
+func decadeParam(raw string) (decade *int, ok bool) {
+	if raw == "" {
+		return nil, true
+	}
+	n, err := strconv.Atoi(raw)
+	if err != nil || n%10 != 0 {
+		return nil, false
+	}
+	return &n, true
 }
 
 // flagParam reads a parameter that is either "true" or left out.

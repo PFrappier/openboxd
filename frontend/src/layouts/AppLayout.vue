@@ -10,7 +10,7 @@ import logo from '@/assets/logo-dark.png'
 const navigation: { label: string; to?: RouteLocationRaw }[] = [
   { label: 'Films', to: { name: 'films' } },
   { label: 'Journal', to: { name: 'diary' } },
-  { label: 'Watchlist' },
+  { label: 'Watchlist', to: { name: 'watchlist' } },
   { label: 'Listes' },
 ]
 

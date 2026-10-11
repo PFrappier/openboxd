@@ -27,7 +27,7 @@ func (h *Handler) importExport(ctx context.Context, dir string) error {
 	films := filmIndex{}
 	err = walkExport(export, func(name string, kind fileKind) error {
 		switch kind {
-		case watchedFile, ratingsFile, likedFilmsFile, diaryFile:
+		case watchedFile, ratingsFile, likedFilmsFile, diaryFile, watchlistFile:
 		default:
 			return nil
 		}
@@ -35,8 +35,17 @@ func (h *Handler) importExport(ctx context.Context, dir string) error {
 		if err != nil {
 			return err
 		}
-		if kind == diaryFile {
+		switch kind {
+		case diaryFile:
 			diary = append(diary, rows...)
+			return nil
+		case watchlistFile:
+			// Kept out of the index: the films of the diary are watched ones.
+			for _, row := range rows {
+				imp.Watchlist = append(imp.Watchlist, library.WatchlistFilm{
+					Name: row.name, Year: row.year, LetterboxdURI: row.uri, AddedOn: row.date,
+				})
+			}
 			return nil
 		}
 		for _, row := range rows {
@@ -91,8 +100,8 @@ func (h *Handler) importExport(ctx context.Context, dir string) error {
 }
 
 // filmRow is a row of one of the files that list films: watched.csv,
-// ratings.csv, likes/films.csv and diary.csv share the columns Date, Name,
-// Year and Letterboxd URI.
+// ratings.csv, likes/films.csv, diary.csv and watchlist.csv share the columns
+// Date, Name, Year and Letterboxd URI.
 type filmRow struct {
 	// date is the day of the action the file is about, e.g. rating the film.
 	date string

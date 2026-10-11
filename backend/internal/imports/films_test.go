@@ -207,3 +207,51 @@ func TestUploadImportsDiary(t *testing.T) {
 		t.Errorf("got %d watched films, want 5: the diary adds none", len(films))
 	}
 }
+
+func TestUploadImportsWatchlist(t *testing.T) {
+	const header = "Date,Name,Year,Letterboxd URI\n"
+	h, store := newHandler(t, t.TempDir())
+	export := map[string]string{
+		"watched.csv": watchedCSV,
+		"watchlist.csv": header +
+			"2024-05-01,Heat,1995,https://boxd.it/2bfM\n" +
+			"2024-06-01,Untitled Sequel,,https://boxd.it/yyyy\n" +
+			// Shares its name and year with a watched film, yet isn't it.
+			"2024-04-01,Alien,1979,https://boxd.it/other\n" +
+			"2024-04-02,No URI,2000,\n",
+		"diary.csv": "Date,Name,Year,Letterboxd URI,Rating,Rewatch,Tags,Watched Date\n" +
+			"2024-01-05,Alien,1979,https://boxd.it/e1,4.5,,,2024-01-01\n",
+		"deleted/watchlist.csv": header + "2020-01-01,Gone,1999,https://boxd.it/gone\n",
+	}
+	// Importing twice doesn't duplicate the films.
+	for range 2 {
+		uploadOK(t, h, upload{"export.zip", zipExport(t, "", export)})
+	}
+
+	films, total, err := store.ListWatchlist(t.Context(), library.WatchlistFilter{}, library.WatchlistSortAddedDesc, 100, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if total != 3 || len(films) != 3 {
+		t.Fatalf("total = %d, %d films, want 3: %+v", total, len(films), films)
+	}
+	// Most recently added first.
+	if first := films[0]; first.Name != "Untitled Sequel" || first.AddedOn != "2024-06-01" || first.Year != nil {
+		t.Errorf("first film = %+v", first)
+	}
+	if heat := films[1]; heat.Name != "Heat" || heat.LetterboxdURI != "https://boxd.it/2bfM" || heat.Year == nil || *heat.Year != 1995 {
+		t.Errorf("second film = %+v", heat)
+	}
+	if watched := listWatched(t, store); len(watched) != 3 {
+		t.Errorf("got %d watched films, want 3: the watchlist adds none", len(watched))
+	}
+
+	// The film of the watchlist doesn't blur which Alien the diary is about.
+	entries, _, err := store.ListDiary(t.Context(), library.DiaryFilter{}, library.DiarySortWatchedDesc, 100, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 || entries[0].Film.ID == films[2].ID {
+		t.Errorf("diary entries = %+v, want one about the watched Alien", entries)
+	}
+}
